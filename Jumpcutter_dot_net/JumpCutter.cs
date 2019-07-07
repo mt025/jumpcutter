@@ -6,6 +6,8 @@ using Emgu.CV.UI;
 using Emgu.CV.Structure;
 using Emgu.Util;
 using System.Collections.Generic;
+using Xabe.FFmpeg;
+using Xabe.FFmpeg.Model;
 
 namespace Jumpcutter_dot_net
 {
@@ -14,46 +16,62 @@ namespace Jumpcutter_dot_net
         private Arguments options;
         private FileInfo videoInputFile;
         private FileInfo videoOutputFile;
+
         private VideoCapture inputVideo;
         private VideoWriter outputVideo;
+
+        private string tempVideo;
+        private string tempAudio;
 
         public JumpCutter(Arguments options)
         {
             this.options = options;
 
 
+            //Download FFMPEG
+            FFmpeg.GetLatestVersion().Wait();
+
             //Check the input file and output file
-            checkFilesReadAndWrite();
+            handleInputOutputAndTemp();
 
             //Init the video object
             inputVideo = new VideoCapture(videoInputFile.FullName);
 
             //Get the video framerate 
+            Console.WriteLine("Getting Video Data...");
             if (options.frame_rate == null) getVideoFrameData();
 
             //Process the audio
             var ignoredFrames = processAudio();
 
-
             //Init output video
-            using (outputVideo = new VideoWriter(videoOutputFile.FullName, options.video_codec, (double)options.frame_rate, options.frame_size, true))
+            using (outputVideo = new VideoWriter(tempVideo, options.video_codec, (double)options.frame_rate, options.frame_size, true))
             {
                 outputVideo.Set(VideoWriter.WriterProperty.Quality, options.frame_quality / 100.00);
-                writeFinalVideo(ignoredFrames,"");
+                writeFinalVideo(ignoredFrames, "");
             }
+
+            addAudioToVideo();
 
         }
 
         private List<int> processAudio()
         {
 
+            ///TODO write progress
+            //Get the audio file from the video
+            Console.WriteLine("Extracting audio...");
+            var conv = Conversion.ExtractAudio(videoInputFile.FullName, tempAudio);
+            conv.Start().Wait();
+            Console.WriteLine("Audio Extracted.");
+
             HashSet<int> framesToDrop = new HashSet<int>();
             var random = new Random();
 
             //Drop 500% of random frames
-            for (var i = 0; i < options.frame_count*5; i += 1)
+            for (var i = 0; i < options.frame_count * 5; i += 1)
             {
-                framesToDrop.Add(random.Next(1, options.frame_count));
+                //framesToDrop.Add(random.Next(1, options.frame_count));
             }
 
             return new List<int>(framesToDrop);
@@ -61,11 +79,14 @@ namespace Jumpcutter_dot_net
 
         }
 
-       
 
-        private void writeFinalVideo(List<int> ignoreFrames,string audioFile) {
 
-            //Update UI every x frames, with a 0.1% rate
+        private void writeFinalVideo(List<int> ignoreFrames, string audioFile)
+        {
+
+            Console.WriteLine("Building video...");
+
+            //Update status every x frames, with a 0.1% rate
             var updateStatus = options.frame_count / 1000;
 
             for (var i = 1; i <= options.frame_count; i += 1)
@@ -86,7 +107,7 @@ namespace Jumpcutter_dot_net
 
                 if (!ignoreFrames.Contains(i))
                 {
-                   
+
                     var img = new Mat();
                     inputVideo.Retrieve(img);
 
@@ -99,11 +120,23 @@ namespace Jumpcutter_dot_net
                 }
 
             }
+
+            Console.WriteLine("\rWriting frame " + options.frame_count + " out of " + options.frame_count + " (100.00%)");
         }
 
+        private void addAudioToVideo()
+        {
+            ///TODO write progress
+            Console.WriteLine("Joining video and audio...");
+            //Concat the audio and video
+            var tempAudio = options.temp_dir + @"\" + "fullaudio.wav";
 
+            var conv = Conversion.AddAudio(tempVideo, tempAudio, videoOutputFile.FullName);
+            conv.Start().Wait();
 
-        public void checkFilesReadAndWrite()
+        }
+
+        public void handleInputOutputAndTemp()
         {
 
             //Does the extention end .mp4, if so we will assume the file is a mp4 file
@@ -153,8 +186,16 @@ namespace Jumpcutter_dot_net
             }
             catch (Exception e) { throw new JCException("Unable to create output file " + options.output_file + "! " + e.Message); }
 
+            var tempdir = new DirectoryInfo(videoOutputFile.Directory + @"\" + videoInputFile.Name + "_temp");
+            options.temp_dir = tempdir.FullName;
+            if (tempdir.Exists)
+            {
+                tempdir.Delete(true);
+            }
 
-
+            tempdir.Create();
+            tempVideo = options.temp_dir + @"\" + "video_no_audio.mp4";
+            tempAudio = options.temp_dir + @"\" + "fullaudio.wav";
         }
 
         void getVideoFrameData()
