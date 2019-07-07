@@ -5,9 +5,7 @@ using Emgu.CV;
 using Emgu.CV.UI;
 using Emgu.CV.Structure;
 using Emgu.Util;
-
-
-
+using System.Collections.Generic;
 
 namespace Jumpcutter_dot_net
 {
@@ -31,45 +29,80 @@ namespace Jumpcutter_dot_net
             inputVideo = new VideoCapture(videoInputFile.FullName);
 
             //Get the video framerate 
-            if (options.frame_rate == null){
-                getVideoFrameData();
-            }
+            if (options.frame_rate == null) getVideoFrameData();
+
+            //Process the audio
+            var ignoredFrames = processAudio();
+
 
             //Init output video
             using (outputVideo = new VideoWriter(videoOutputFile.FullName, options.video_codec, (double)options.frame_rate, options.frame_size, true))
             {
-                
-                test();
-
+                options.frame_quality = 5;
+                outputVideo.Set(VideoWriter.WriterProperty.Quality, options.frame_quality / 100.00);
+                writeFinalVideo(ignoredFrames,"");
             }
 
-            
+        }
+
+        private List<int> processAudio()
+        {
+
+            HashSet<int> framesToDrop = new HashSet<int>();
+            var random = new Random();
+
+            //Drop 80% of random frames
+            for (var i = 0; i < options.frame_count; i += 1)
+            {
+                framesToDrop.Add(random.Next(1, options.frame_count));
+            }
+
+            return new List<int>(framesToDrop);
 
 
         }
 
-        private void test()
-        {
+       
+
+        private void writeFinalVideo(List<int> ignoreFrames,string audioFile) {
+
+            //Update UI every x frames, with a 0.1% rate
+            var updateStatus = options.frame_count / 1000;
+
             for (var i = 1; i <= options.frame_count; i += 1)
             {
-                using (var frame = getFrameAt(i)) {
-                //Evem though frame is in frame_count, it doesn't exsit?
-                if (frame.Bitmap == null) continue;
-                outputVideo.Write(frame);
+
+                if (i % updateStatus == 0)
+                {
+                    var pc = ((double)i / options.frame_count * 100);
+                    Console.Write("\rWriting frame " + i + " out of " + options.frame_count + " (" + pc.ToString("0.00") + "%)");
                 }
+
+                //move to next frame
+                var nextFrame = inputVideo.Grab();
+
+
+                //Even though frame is in frame_count, it sometimes doesn't exsit?
+                if (!nextFrame) continue;
+
+                if (!ignoreFrames.Contains(i))
+                {
+                   
+                    var img = new Mat();
+                    inputVideo.Retrieve(img);
+
+                    outputVideo.Write(img);
+                    img.Dispose();
+                }
+                else
+                {
+
+                }
+
             }
-
-
-            //CvInvoke.Imshow("Image",frame);
-            //CvInvoke.WaitKey(0);
-
         }
 
-        private Mat getFrameAt(int frameNumber) {
 
-            inputVideo.SetCaptureProperty(Emgu.CV.CvEnum.CapProp.PosFrames, frameNumber);
-            return inputVideo.QueryFrame();
-        }
 
         public void checkFilesReadAndWrite()
         {
@@ -97,8 +130,29 @@ namespace Jumpcutter_dot_net
                 videoOutputFile = new FileInfo(videoInputFile.DirectoryName + "/" + Path.GetFileNameWithoutExtension(videoInputFile.Name) + "_ALTERED.mp4");
             }
 
-            try { videoOutputFile.Directory.Create(); //videoOutputFile.Create(); 
-            } catch (Exception e) { throw new JCException("Unable to create output file " + options.output_file + "! " + e.Message); }
+            if (videoOutputFile.Exists)
+            {
+                ///TODO Add param for overrite file
+                if (true)
+                {
+                    videoOutputFile.Delete();
+                }
+                else
+                {
+                    throw new JCException("File " + options.output_file + " already exists");
+                }
+
+            }
+
+            try
+            {
+                ///TODO FIX THIS
+                //Make sure we can create and write the file
+                videoOutputFile.Directory.Create();
+                //videoOutputFile.Create();
+                //videoOutputFile.Delete();
+            }
+            catch (Exception e) { throw new JCException("Unable to create output file " + options.output_file + "! " + e.Message); }
 
 
 
@@ -108,11 +162,11 @@ namespace Jumpcutter_dot_net
         {
 
             var frameRate = inputVideo.GetCaptureProperty(Emgu.CV.CvEnum.CapProp.Fps);
-            var frameWidth = (int) inputVideo.GetCaptureProperty(Emgu.CV.CvEnum.CapProp.FrameWidth);
-            var frameHeight = (int) inputVideo.GetCaptureProperty(Emgu.CV.CvEnum.CapProp.FrameHeight);
+            var frameWidth = (int)inputVideo.GetCaptureProperty(Emgu.CV.CvEnum.CapProp.FrameWidth);
+            var frameHeight = (int)inputVideo.GetCaptureProperty(Emgu.CV.CvEnum.CapProp.FrameHeight);
             var frameCount = (int)(inputVideo.GetCaptureProperty(Emgu.CV.CvEnum.CapProp.FrameCount)); ;
             var videoLength = (int)(frameCount / frameRate);
-            
+
             //Just to avoid numbers like 29.99999954
             frameRate = Math.Round(frameRate, 4);
 
@@ -133,6 +187,13 @@ namespace Jumpcutter_dot_net
 
 
 
+        //This function is slower than streaming the whole file and dropping un-needed frames
+        //private Mat getFrameAt(int frameNumber)
+        //{
+        //
+        //    inputVideo.SetCaptureProperty(Emgu.CV.CvEnum.CapProp.PosFrames, frameNumber);
+        //    return inputVideo.QueryFrame();
+        //}
 
     }
 }
