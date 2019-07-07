@@ -44,7 +44,7 @@ namespace Jumpcutter_dot_net
 
 
         [Option(Required = false, Default = 75, HelpText = "Quality of frames to be extracted from input video.")]
-        public int? frame_quality { get; set; }
+        public int frame_quality { get; set; }
 
 
 

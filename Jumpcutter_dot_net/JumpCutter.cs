@@ -38,7 +38,6 @@ namespace Jumpcutter_dot_net
             //Init output video
             using (outputVideo = new VideoWriter(videoOutputFile.FullName, options.video_codec, (double)options.frame_rate, options.frame_size, true))
             {
-                options.frame_quality = 5;
                 outputVideo.Set(VideoWriter.WriterProperty.Quality, options.frame_quality / 100.00);
                 writeFinalVideo(ignoredFrames,"");
             }
@@ -51,8 +50,8 @@ namespace Jumpcutter_dot_net
             HashSet<int> framesToDrop = new HashSet<int>();
             var random = new Random();
 
-            //Drop 80% of random frames
-            for (var i = 0; i < options.frame_count; i += 1)
+            //Drop 500% of random frames
+            for (var i = 0; i < options.frame_count*5; i += 1)
             {
                 framesToDrop.Add(random.Next(1, options.frame_count));
             }
