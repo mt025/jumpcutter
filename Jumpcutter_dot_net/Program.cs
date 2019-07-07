@@ -1,4 +1,5 @@
-﻿using System;
+﻿using CommandLine;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -12,6 +13,30 @@ namespace Jumpcutter_dot_net
         {
 
 
+           Arguments options = new Arguments();
+           var ops = Parser.Default.ParseArguments<Arguments>(args).WithParsed(x=> options = x);
+
+            if (ops.Tag == ParserResultType.Parsed)
+            {
+
+                try
+                {
+                    new JumpCutter(options);
+                }
+                catch (JCException e)
+                {
+                    Console.Error.WriteLine("Error: "  + e.Message);
+                }
+               // catch (Exception e) {
+               //     Console.Error.WriteLine("Runtime Error:");
+               //     Console.Error.WriteLine(e);
+               // }
+            }
+            //Console.ReadKey();
         }
+
+
+
+
     }
 }
