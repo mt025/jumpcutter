@@ -5,3 +5,7 @@ Z:\Programming\githubpublicrepos\jumpcutter\Varispeed\obj\Debug\Varispeed.dll
 Z:\Programming\githubpublicrepos\jumpcutter\Varispeed\obj\Debug\Varispeed.pdb
 Z:\Programming\githubpublicrepos\jumpcutter\Varispeed\bin\Debug\SoundTouch.dll
 Z:\Programming\githubpublicrepos\jumpcutter\Varispeed\bin\Debug\SoundTouch_x64.dll
+Z:\Programming\githubpublicrepos\jumpcutter\Varispeed\bin\Debug\NAudio.dll
+Z:\Programming\githubpublicrepos\jumpcutter\Varispeed\bin\Debug\NAudio.xml
+Z:\Programming\githubpublicrepos\jumpcutter\Varispeed\obj\Debug\Varispeed-SoundTouch.csprojAssemblyReference.cache
+Z:\Programming\githubpublicrepos\jumpcutter\Varispeed\obj\Debug\Varispeed-SoundTouch.csproj.CopyComplete

@@ -88,7 +88,7 @@ namespace Jumpcutter_dot_net
 
                 float[] frame;
 
-                while ((frame = ReadNextSampleFrames(wavFileReader, 100000)) != null)
+                while ((frame = Varispeed.SampleFrameReader.ReadNextSampleFrames(wavFileReader, 100000)) != null)
                 {
 
                     var currentMax = getMaxVolume(frame);
@@ -105,7 +105,7 @@ namespace Jumpcutter_dot_net
 
 
                 //Loop each frame and grab all samples
-                while ((frame = ReadNextSampleFrames(wavFileReader, samplesPerFrame)) != null)
+                while ((frame = Varispeed.SampleFrameReader.ReadNextSampleFrames(wavFileReader, samplesPerFrame)) != null)
                 {
                     var currentMax = getMaxVolume(frame) / maxVolume;
                     hasLoudAudio.Add(currentMax >= options.silent_threshold);
@@ -153,27 +153,63 @@ namespace Jumpcutter_dot_net
                 {
 
                     var chunkLength = (chunk.Item2 * samplesPerFrame) - (chunk.Item1 * samplesPerFrame);
+                    var sampProv = new SampleChannel(wavFileReader,false);
+                    VarispeedSampleProvider sampleProv;
 
-                    var audioData = ReadNextSampleFrames(wavFileReader, chunkLength);
-
-                    var soundTouchProfile = new SoundTouchProfile(true, false)
+                    using (sampleProv = new VarispeedSampleProvider(sampProv, new SoundTouchProfile(true, false)))
                     {
-                        Channels = wavFileReader.WaveFormat.Channels,
-                        SampleRate = wavFileReader.WaveFormat.SampleRate,
-                    };
+                        using (var writer = new WaveFileWriter(options.temp_dir + @"\" + (chunk.Item3 ? "Loud" : "Quiet") + "_chunk_" + chunk.Item1 + " .wav", wavFileReader.WaveFormat))
+                        {
+                            int bufferSize = 10000;
+                            float[] buffer = new float[bufferSize];
+                            int samplesRead;
+                            int totalSamplesRead = 0;
+
+                            
+
+                            while ((samplesRead = sampleProv.Read(buffer, 0, bufferSize)) > 0)
+                            {
+
+                                writer.WriteSamples(buffer,0, bufferSize);
+                                totalSamplesRead += samplesRead;
+
+                                //If the next chunk we take is more than the chunk length, set the next buffer to fill the chunklength
+                                if ((totalSamplesRead + bufferSize) > chunkLength)
+                                {
+                                    bufferSize = chunkLength - totalSamplesRead;
+                                }
+
+                                //If we have reached the end, exit
+                                if (totalSamplesRead >= chunkLength)
+                                {
+                                    break;
+                                }
 
 
-                    var soundTouch = new SoundTouchProcessor(audioData, soundTouchProfile);
 
-                    var output = soundTouch.Process();
+                            }
 
+                        }
 
-                    using (var writer = new WaveFileWriter(options.temp_dir + @"\" + "chunk_" + chunk.Item1 + " .wav", wavFileReader.WaveFormat))
-                    {
-
-                        writer.WriteSamples(output, 0, output.Length);
 
                     }
+                        
+
+
+
+                    // var audioData = ReadNextSampleFrames(wavFileReader, chunkLength);
+                    //
+                    // var soundTouchProfile = new SoundTouchProfile(true, false)
+                    // {
+                    //     Channels = wavFileReader.WaveFormat.Channels,
+                    //     SampleRate = wavFileReader.WaveFormat.SampleRate,
+                    // };
+                    //
+                    //
+                    // var soundTouch = new SoundTouchProcessor(audioData, soundTouchProfile);
+
+ 
+                   
 
 
 
@@ -279,58 +315,6 @@ namespace Jumpcutter_dot_net
 
 
 
-        //Edit of NAudio.Wave.WaveFileReader.ReadNextSampleFrame to allow retrevial of multiple samples in a batch
-        public float[] ReadNextSampleFrames(WaveFileReader wfr, int count = 1)
-        {
-            switch (wfr.WaveFormat.Encoding)
-            {
-                case WaveFormatEncoding.Pcm:
-                case WaveFormatEncoding.IeeeFloat:
-                case WaveFormatEncoding.Extensible: // n.b. not necessarily PCM, should probably write more code to handle this case
-                    break;
-                default:
-                    throw new InvalidOperationException("Only 16, 24 or 32 bit PCM or IEEE float audio data supported");
-            }
-            var sampleFrame = new float[wfr.WaveFormat.Channels * count];
-            int bytesPerSample = wfr.WaveFormat.Channels * (wfr.WaveFormat.BitsPerSample / 8);
-            int bytesToRead = bytesPerSample * count;
-            byte[] raw = new byte[bytesToRead];
-            int bytesRead = wfr.Read(raw, 0, bytesToRead);
-            if (bytesRead == 0) return null; // end of file
-            if (bytesRead < bytesToRead)
-            {
-                count = bytesRead / bytesPerSample;
-            }
-            int offset = 0;
-            for (int index = 0; index < wfr.WaveFormat.Channels * count; index++)
-            {
-                if (wfr.WaveFormat.BitsPerSample == 16)
-                {
-                    sampleFrame[index] = BitConverter.ToInt16(raw, offset) / 32768f;
-                    offset += 2;
-                }
-                else if (wfr.WaveFormat.BitsPerSample == 24)
-                {
-                    sampleFrame[index] = (((sbyte)raw[offset + 2] << 16) | (raw[offset + 1] << 8) | raw[offset]) / 8388608f;
-                    offset += 3;
-                }
-                else if (wfr.WaveFormat.BitsPerSample == 32 && wfr.WaveFormat.Encoding == WaveFormatEncoding.IeeeFloat)
-                {
-                    sampleFrame[index] = BitConverter.ToSingle(raw, offset);
-                    offset += 4;
-                }
-                else if (wfr.WaveFormat.BitsPerSample == 32)
-                {
-                    sampleFrame[index] = BitConverter.ToInt32(raw, offset) / (Int32.MaxValue + 1f);
-                    offset += 4;
-                }
-                else
-                {
-                    throw new InvalidOperationException("Unsupported bit depth");
-                }
-            }
-            return sampleFrame;
-        }
 
 
         private float getMaxVolume(float[] s)
@@ -340,26 +324,6 @@ namespace Jumpcutter_dot_net
             return new float[] { maxv, minv }.Max();
         }
 
-
-        public static float[] ReadInAllSamples(string file)
-        {
-            ISampleProvider reader = new AudioFileReader(file);
-
-            List<float> allSamples = new List<float>();
-            float[] samples = new float[16384];
-
-            while (reader.Read(samples, 0, samples.Length) > 0)
-            {
-                for (int i = 0; i < samples.Length; i++)
-                    allSamples.Add(samples[i]);
-            }
-
-            samples = new float[allSamples.Count];
-            for (int i = 0; i < samples.Length; i++)
-                samples[i] = allSamples[i];
-
-            return samples;
-        }
 
         private void prepareAudio()
         {
