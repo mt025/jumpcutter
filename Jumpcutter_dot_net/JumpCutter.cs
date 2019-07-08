@@ -51,14 +51,14 @@ namespace Jumpcutter_dot_net
             prepareAudio();
 
             //Process the audio
-            var ignoredFrames = processAudio();
+            var framesToRender = processAudio();
 
 
             //Init output video
             using (outputVideo = new VideoWriter(tempVideo, Options.VIDEO_CODEC, (double)options.frame_rate, options.frame_size, true))
             {
                 outputVideo.Set(VideoWriter.WriterProperty.Quality, options.frame_quality / 100.00);
-                writeFinalVideo(ignoredFrames, "");
+                writeFinalVideo(framesToRender, "");
             }
 
             addAudioToVideo();
@@ -68,6 +68,7 @@ namespace Jumpcutter_dot_net
         private List<int> processAudio()
         {
 
+            HashSet<int> framesToRender = new HashSet<int>();
             float maxVolume = 0;
             List<bool> hasLoudAudio = new List<bool>();
 
@@ -138,22 +139,24 @@ namespace Jumpcutter_dot_net
                 using (var writer = new WaveFileWriter(options.temp_dir + @"\finalAudio.wav", audioFileReader.WaveFormat))
                 {
 
+                    var outputPointer = 0;
+
                     foreach (var chunk in chunks)
                     {
-
+                        var audoFrameLength = chunk.Item2 - chunk.Item1;
+                        var chunkLength = ((chunk.Item2 * samplesPerFrame) - (chunk.Item1 * samplesPerFrame));
+                        int totalSamplesRead = 0;
+                        var playbackRate = (float)(chunk.Item3 ? options.sounded_speed : options.silent_speed);
                         VarispeedSampleProvider sampleProv;
 
                         using (sampleProv = new VarispeedSampleProvider(audioFileReader, new SoundTouchProfile(true, false)))
                         {
-                            sampleProv.PlaybackRate = (float)(chunk.Item3 ? options.sounded_speed : options.silent_speed );
-
-
-                            var chunkLength = ((chunk.Item2 * samplesPerFrame) - (chunk.Item1 * samplesPerFrame));
+                            sampleProv.PlaybackRate = playbackRate;
 
                             int bufferSize = 10000;
                             float[] buffer = new float[bufferSize];
                             int samplesRead;
-                            int totalSamplesRead = 0;
+
 
                             while ((samplesRead = sampleProv.Read(buffer, 0, bufferSize)) > 0)
                             {
@@ -178,23 +181,28 @@ namespace Jumpcutter_dot_net
 
 
                         }
+
+                        var endPointer = outputPointer + totalSamplesRead;
+                        var startOutputFrame = outputPointer / samplesPerFrame;
+                        var endOutputFrame = endPointer / samplesPerFrame;
+
+                        for (var outputFrame = startOutputFrame; outputFrame < endOutputFrame; outputFrame++)
+                        {
+                            var inputFrame = (int)(chunk.Item1 + playbackRate * (outputFrame - startOutputFrame));
+                            framesToRender.Add(inputFrame);
+                        }
+
                     }
+
+
+
                 }
+
+             
+
+
             }
-
-
-            HashSet<int> framesToDrop = new HashSet<int>();
-            var random = new Random();
-
-            //Drop 500% of random frames
-            for (var i = 0; i < options.frame_count * 5; i += 1)
-            {
-                framesToDrop.Add(random.Next(1, options.frame_count));
-            }
-
-            return new List<int>(framesToDrop);
-
-
+            return new List<int>(framesToRender);
         }
 
 
@@ -231,46 +239,48 @@ namespace Jumpcutter_dot_net
 
 
 
-        private void writeFinalVideo(List<int> ignoreFrames, string audioFile)
+        private void writeFinalVideo(List<int> framesToRender, string audioFile)
         {
 
             Console.WriteLine("Building video...");
 
             //Update status every x frames, with a 0.1% rate
-            var updateStatus = options.frame_count / 1000;
+            var updateStatus = framesToRender.Count / 1000;
+            var lastFrame = 0;
+            var count = 0;
 
-            for (var i = 1; i <= options.frame_count; i += 1)
+            foreach (var frame in framesToRender)
             {
+                count++;
 
-                if (i % updateStatus == 0)
+                if (count % updateStatus == 0)
                 {
-                    var pc = ((double)i / options.frame_count * 100);
-                    Console.Write("\rWriting frame " + i + " out of " + options.frame_count + " (" + pc.ToString("0.00") + "%)");
+                    var pc = ((double)count / framesToRender.Count * 100);
+                    Console.Write("\rWriting frame " + count + " out of " + framesToRender.Count + " (" + pc.ToString("0.00") + "%)");
                 }
 
-                //move to next frame
-                var nextFrame = inputVideo.Grab();
-
-
-                //Even though frame is in frame_count, it sometimes doesn't exsit?
-                if (!nextFrame) continue;
-
-                if (!ignoreFrames.Contains(i))
+                if (frame != lastFrame)
                 {
-
+                    var framesToMove = frame - lastFrame;
+                    bool nextFrame;
+                    //move to next x frame
+                    for (var i = 0; i < framesToMove; i++)
+                    {
+                        nextFrame = inputVideo.Grab();
+                    }
+                    ///TODO Double check that nextFrame exsits?
+                    ///
                     var img = new Mat();
                     inputVideo.Retrieve(img);
 
                     outputVideo.Write(img);
                     img.Dispose();
-                }
-                else
-                {
+
 
                 }
+                lastFrame = frame;
 
             }
-
             Console.WriteLine("\rWriting frame " + options.frame_count + " out of " + options.frame_count + " (100.00%)");
         }
 
@@ -279,7 +289,7 @@ namespace Jumpcutter_dot_net
             ///TODO write progress
             Console.WriteLine("Joining video and audio...");
             //Concat the audio and video
-            var tempAudio = options.temp_dir + @"\" + "fullaudio.wav";
+            var tempAudio = options.temp_dir + @"\" + "finalAudio.wav";
 
             var conv = Conversion.AddAudio(tempVideo, tempAudio, videoOutputFile.FullName);
             conv.Start().Wait();
