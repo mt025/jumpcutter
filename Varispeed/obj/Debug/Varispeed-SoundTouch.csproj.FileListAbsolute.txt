@@ -1,0 +1,7 @@
+Z:\Programming\githubpublicrepos\jumpcutter\Varispeed\obj\Debug\Varispeed-SoundTouch.csproj.CoreCompileInputs.cache
+Z:\Programming\githubpublicrepos\jumpcutter\Varispeed\bin\Debug\Varispeed.dll
+Z:\Programming\githubpublicrepos\jumpcutter\Varispeed\bin\Debug\Varispeed.pdb
+Z:\Programming\githubpublicrepos\jumpcutter\Varispeed\obj\Debug\Varispeed.dll
+Z:\Programming\githubpublicrepos\jumpcutter\Varispeed\obj\Debug\Varispeed.pdb
+Z:\Programming\githubpublicrepos\jumpcutter\Varispeed\bin\Debug\SoundTouch.dll
+Z:\Programming\githubpublicrepos\jumpcutter\Varispeed\bin\Debug\SoundTouch_x64.dll
