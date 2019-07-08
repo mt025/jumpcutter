@@ -8,12 +8,15 @@ using Emgu.Util;
 using System.Collections.Generic;
 using Xabe.FFmpeg;
 using Xabe.FFmpeg.Model;
+using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
+using System.Linq;
 
 namespace Jumpcutter_dot_net
 {
     internal class JumpCutter
     {
-        private Arguments options;
+        private Options options;
         private FileInfo videoInputFile;
         private FileInfo videoOutputFile;
 
@@ -23,7 +26,9 @@ namespace Jumpcutter_dot_net
         private string tempVideo;
         private string tempAudio;
 
-        public JumpCutter(Arguments options)
+
+
+        public JumpCutter(Options options)
         {
             this.options = options;
 
@@ -41,11 +46,15 @@ namespace Jumpcutter_dot_net
             Console.WriteLine("Getting Video Data...");
             if (options.frame_rate == null) getVideoFrameData();
 
+            //Prepare the audio
+            prepareAudio();
+
             //Process the audio
             var ignoredFrames = processAudio();
 
+
             //Init output video
-            using (outputVideo = new VideoWriter(tempVideo, options.video_codec, (double)options.frame_rate, options.frame_size, true))
+            using (outputVideo = new VideoWriter(tempVideo, Options.VIDEO_CODEC, (double)options.frame_rate, options.frame_size, true))
             {
                 outputVideo.Set(VideoWriter.WriterProperty.Quality, options.frame_quality / 100.00);
                 writeFinalVideo(ignoredFrames, "");
@@ -57,14 +66,87 @@ namespace Jumpcutter_dot_net
 
         private List<int> processAudio()
         {
+            var chunkHasLoudAudio = new List<bool>();
 
-            ///TODO write progress
-            //Get the audio file from the video
-            Console.WriteLine("Extracting audio...");
-            var conv = Conversion.ExtractAudio(videoInputFile.FullName, tempAudio);
-            conv.Start().Wait();
-            Console.WriteLine("Audio Extracted.");
+            using (var wavFileReader = new WaveFileReader(tempAudio))
+            {
+                //Total audio samples (USING ONLY ONE CHANNEL)
+                var audioSampleCount = wavFileReader.SampleCount;
 
+                //Sample rate of the audio file
+                var sampleRate = wavFileReader.WaveFormat.SampleRate;
+                
+                //Samples of audio per frame
+                var samplesPerFrame = (int)(sampleRate / (double)options.frame_rate);
+
+                //This is pretty much the same as the total video frame count
+                //var audioFrameCount = (int)Math.Ceiling(new decimal(audioSampleCount / samplesPerFrame))+1;
+
+
+                float maxVolume = 0;
+
+                float[] frame;
+
+                while ((frame = ReadNextSampleFrames(wavFileReader,100000)) != null)
+                {
+                
+                    var currentMax = getMaxVolume(frame);
+                    if (maxVolume < currentMax)
+                    {
+                        maxVolume = currentMax;
+                    }
+                
+                }
+
+                wavFileReader.Position = 0;
+
+                List<bool> hasLoudAudio = new List<bool>();
+
+
+                //Loop each frame and grab all samples
+                while ((frame = ReadNextSampleFrames(wavFileReader, samplesPerFrame)) != null)
+                {
+                    var currentMax = getMaxVolume(frame)/maxVolume;
+                    hasLoudAudio.Add(currentMax >= options.silent_threshold);                   
+                }
+
+                var audioFrameCount = hasLoudAudio.Count;
+
+
+                Console.WriteLine(hasLoudAudio);
+
+
+                // using (var readerStream = WaveFormatConversionStream.CreatePcmStream(wavFileReader))
+                // {
+                //     using (var blockStream = new BlockAlignReductionStream(readerStream))
+                //     {
+                //
+                //         var sourceBytesPerSample = (blockStream.WaveFormat.BitsPerSample / 8) * blockStream.WaveFormat.Channels;
+                //         var sampleChannel = new SampleChannel(blockStream, false);
+                //         var destBytesPerSample = 4 * sampleChannel.WaveFormat.Channels;
+                //
+                //         //var  length = destBytesPerSample * (readerStream.Length / sourceBytesPerSample);
+                //
+                //         for (var i = 0; i <= audioFrameCount; i++)
+                //         {
+                //
+                //             float[] buffer = new float[samplesPerFrame];
+                //             sampleChannel.Read(buffer, 0, samplesPerFrame);
+                //             for (var b = 0; b <= buffer.Length; b++)
+                //             {
+                //                 var currentMax = getMaxVolume(buffer);
+                //                 if (maxVolume < currentMax)
+                //                 {
+                //                     maxVolume = currentMax;
+                //                 }
+                //
+                //             }
+                //         }
+                //     }
+
+                Console.WriteLine(maxVolume);
+
+            }
             HashSet<int> framesToDrop = new HashSet<int>();
             var random = new Random();
 
@@ -75,8 +157,110 @@ namespace Jumpcutter_dot_net
             }
 
             return new List<int>(framesToDrop);
+        }
 
 
+
+        //Edit of NAudio.Wave.WaveFileReader.ReadNextSampleFrame to allow retrevial of multiple samples in a batch
+        public float[] ReadNextSampleFrames(WaveFileReader wfr,int count = 1)
+        {
+            switch (wfr.WaveFormat.Encoding)
+            {
+                case WaveFormatEncoding.Pcm:
+                case WaveFormatEncoding.IeeeFloat:
+                case WaveFormatEncoding.Extensible: // n.b. not necessarily PCM, should probably write more code to handle this case
+                    break;
+                default:
+                    throw new InvalidOperationException("Only 16, 24 or 32 bit PCM or IEEE float audio data supported");
+            }
+            var sampleFrame = new float[wfr.WaveFormat.Channels * count];
+            int bytesPerSample = wfr.WaveFormat.Channels * (wfr.WaveFormat.BitsPerSample / 8);
+            int bytesToRead = bytesPerSample * count;
+            byte[] raw = new byte[bytesToRead];
+            int bytesRead = wfr.Read(raw, 0, bytesToRead);
+            if (bytesRead == 0) return null; // end of file
+            if (bytesRead < bytesToRead)
+            {
+                count = bytesRead / bytesPerSample;
+            }
+            int offset = 0;
+            for (int index = 0; index < wfr.WaveFormat.Channels*count; index++)
+            {
+                if (wfr.WaveFormat.BitsPerSample == 16)
+                {
+                    sampleFrame[index] = BitConverter.ToInt16(raw, offset) / 32768f;
+                    offset += 2;
+                }
+                else if (wfr.WaveFormat.BitsPerSample == 24)
+                {
+                    sampleFrame[index] = (((sbyte)raw[offset + 2] << 16) | (raw[offset + 1] << 8) | raw[offset]) / 8388608f;
+                    offset += 3;
+                }
+                else if (wfr.WaveFormat.BitsPerSample == 32 && wfr.WaveFormat.Encoding == WaveFormatEncoding.IeeeFloat)
+                {
+                    sampleFrame[index] = BitConverter.ToSingle(raw, offset);
+                    offset += 4;
+                }
+                else if (wfr.WaveFormat.BitsPerSample == 32)
+                {
+                    sampleFrame[index] = BitConverter.ToInt32(raw, offset) / (Int32.MaxValue + 1f);
+                    offset += 4;
+                }
+                else
+                {
+                    throw new InvalidOperationException("Unsupported bit depth");
+                }
+            }
+            return sampleFrame;
+        }
+
+
+        private float getMaxVolume(float[] s)
+        {
+            var maxv = s.Max();
+            var minv = -s.Min();
+            return new float[] { maxv, minv }.Max();
+        }
+
+
+        public static float[] ReadInAllSamples(string file)
+        {
+            ISampleProvider reader = new AudioFileReader(file);
+
+            List<float> allSamples = new List<float>();
+            float[] samples = new float[16384];
+
+            while (reader.Read(samples, 0, samples.Length) > 0)
+            {
+                for (int i = 0; i < samples.Length; i++)
+                    allSamples.Add(samples[i]);
+            }
+
+            samples = new float[allSamples.Count];
+            for (int i = 0; i < samples.Length; i++)
+                samples[i] = allSamples[i];
+
+            return samples;
+        }
+
+        private void prepareAudio()
+        {
+
+            ///TODO write progress
+            //Get the audio file from the video
+            /////DEBUG 
+            ///
+            if (!File.Exists(tempAudio))
+            {
+                Console.WriteLine("Extracting audio...");
+                var conv = Conversion.ExtractAudio(videoInputFile.FullName, tempAudio);
+                conv.Start().Wait();
+                Console.WriteLine("Audio Extracted.");
+            }
+            else
+            {
+                Console.WriteLine("DEBUG.... SKIPPING CONVERSION!!!");
+            }
         }
 
 
@@ -150,8 +334,10 @@ namespace Jumpcutter_dot_net
             //Does it exist?
             if (!videoInputFile.Exists) throw new JCException("File " + options.input_file + " doesn't exist");
 
+            //Setup output file
             if (options.output_file != null)
             {
+                //Does the extention end .mp4, if so we will assume the file is a mp4 file
                 if (!options.input_file.EndsWith(".mp4", true, CultureInfo.CurrentCulture)) throw new JCException("This application only supports MP4 as an output file");
 
                 videoOutputFile = new FileInfo(options.output_file);
@@ -162,6 +348,7 @@ namespace Jumpcutter_dot_net
                 videoOutputFile = new FileInfo(videoInputFile.DirectoryName + "/" + Path.GetFileNameWithoutExtension(videoInputFile.Name) + "_ALTERED.mp4");
             }
 
+            //If the output file already exists, delete it, if debug mode
             if (videoOutputFile.Exists)
             {
                 ///TODO Add param for overrite file
@@ -188,12 +375,15 @@ namespace Jumpcutter_dot_net
 
             var tempdir = new DirectoryInfo(videoOutputFile.Directory + @"\" + videoInputFile.Name + "_temp");
             options.temp_dir = tempdir.FullName;
+
+            //Clear the temp dir
+            ////TODO DEBUG
             if (tempdir.Exists)
             {
-                tempdir.Delete(true);
+                //     tempdir.Delete(true);
             }
 
-            tempdir.Create();
+            //tempdir.Create();
             tempVideo = options.temp_dir + @"\" + "video_no_audio.mp4";
             tempAudio = options.temp_dir + @"\" + "fullaudio.wav";
         }

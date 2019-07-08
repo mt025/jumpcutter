@@ -2,50 +2,16 @@ def getMaxVolume(s):
     maxv = float(np.max(s))
     minv = float(np.min(s))
     return max(maxv,-minv)
-
-def copyFrame(inputFrame,outputFrame):
-    src = TEMP_FOLDER+"/frame{:06d}".format(inputFrame+1)+".jpg"
-    dst = TEMP_FOLDER+"/newFrame{:06d}".format(outputFrame+1)+".jpg"
-    if not os.path.isfile(src):
-        return False
-    copyfile(src, dst)
-    if outputFrame%20 == 19:
-        print(str(outputFrame+1)+" time-altered frames saved.")
-    return True
-
-command = "ffmpeg -i "+INPUT_FILE+" -qscale:v "+str(FRAME_QUALITY)+" "+TEMP_FOLDER+"/frame%06d.jpg -hide_banner"
-subprocess.call(command, shell=True)
-
-command = "ffmpeg -i "+INPUT_FILE+" -ab 160k -ac 2 -ar "+str(SAMPLE_RATE)+" -vn "+TEMP_FOLDER+"/audio.wav"
-
-subprocess.call(command, shell=True)
-
-command = "ffmpeg -i "+TEMP_FOLDER+"/input.mp4 2>&1"
-f = open(TEMP_FOLDER+"/params.txt", "w")
-subprocess.call(command, shell=True, stdout=f)
-
-
-
+	   
 sampleRate, audioData = wavfile.read(TEMP_FOLDER+"/audio.wav")
 audioSampleCount = audioData.shape[0]
 maxAudioVolume = getMaxVolume(audioData)
-
-f = open(TEMP_FOLDER+"/params.txt", 'r+')
-pre_params = f.read()
-f.close()
-params = pre_params.split('\n')
-for line in params:
-    m = re.search('Stream #.*Video.* ([0-9]*) fps',line)
-    if m is not None:
-        frameRate = float(m.group(1))
 
 samplesPerFrame = sampleRate/frameRate
 
 audioFrameCount = int(math.ceil(audioSampleCount/samplesPerFrame))
 
 hasLoudAudio = np.zeros((audioFrameCount))
-
-
 
 for i in range(audioFrameCount):
     start = int(i*samplesPerFrame)
@@ -116,8 +82,4 @@ wavfile.write(TEMP_FOLDER+"/audioNew.wav",SAMPLE_RATE,outputAudioData)
 outputFrame = math.ceil(outputPointer/samplesPerFrame)
 for endGap in range(outputFrame,audioFrameCount):
     copyFrame(int(audioSampleCount/samplesPerFrame)-1,endGap)
-'''
-
-command = "ffmpeg -framerate "+str(frameRate)+" -i "+TEMP_FOLDER+"/newFrame%06d.jpg -i "+TEMP_FOLDER+"/audioNew.wav -strict -2 "+OUTPUT_FILE
-subprocess.call(command, shell=True)
-
+''

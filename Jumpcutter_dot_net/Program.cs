@@ -1,6 +1,7 @@
 ﻿using CommandLine;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -13,8 +14,8 @@ namespace Jumpcutter_dot_net
         {
 
 
-           Arguments options = new Arguments();
-           var ops = Parser.Default.ParseArguments<Arguments>(args).WithParsed(x=> options = x);
+           Options options = new Options();
+           var ops = Parser.Default.ParseArguments<Options>(args).WithParsed(x=> options = x);
 
             if (ops.Tag == ParserResultType.Parsed)
             {
@@ -25,7 +26,13 @@ namespace Jumpcutter_dot_net
                 }
                 catch (JCException e)
                 {
-                    Console.Error.WriteLine("Error: "  + e.Message);
+                    Console.Error.WriteLine("Error: " + e.Message);
+                }
+                finally {
+                    if (string.IsNullOrEmpty(options.temp_dir)) {
+                        Directory.Delete(options.temp_dir,true);
+                    }
+
                 }
                // catch (Exception e) {
                //     Console.Error.WriteLine("Runtime Error:");

@@ -106,7 +106,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Argument.cs" />
+    <Compile Include="Options.cs" />
     <Compile Include="JCException.cs" />
     <Compile Include="JumpCutter.cs" />
     <Compile Include="Program.cs" />
