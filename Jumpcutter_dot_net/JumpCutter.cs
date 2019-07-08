@@ -67,55 +67,43 @@ namespace Jumpcutter_dot_net
 
         private List<int> processAudio()
         {
-            var chunkHasLoudAudio = new List<bool>();
 
-            using (var wavFileReader = new WaveFileReader(tempAudio))
+            float maxVolume = 0;
+            List<bool> hasLoudAudio = new List<bool>();
+
+            using (var audioFileReader = new AudioFileReader(tempAudio))
             {
-                //Total audio samples (USING ONLY ONE CHANNEL)
-                var audioSampleCount = wavFileReader.SampleCount;
-
                 //Sample rate of the audio file
-                var sampleRate = wavFileReader.WaveFormat.SampleRate;
+                var sampleRate = audioFileReader.WaveFormat.SampleRate;
 
                 //Samples of audio per frame
-                var samplesPerFrame = (int)(sampleRate / (double)options.frame_rate);
+                var samplesPerFrame = (int)((sampleRate * audioFileReader.WaveFormat.Channels) / (double)options.frame_rate);
 
-                //This is pretty much the same as the total video frame count
-                //var audioFrameCount = (int)Math.Ceiling(new decimal(audioSampleCount / samplesPerFrame))+1;
+                List<float> maxVolumePerFrame = new List<float>();
 
-
-                float maxVolume = 0;
-
-                float[] frame;
-
-                while ((frame = Varispeed.SampleFrameReader.ReadNextSampleFrames(wavFileReader, 100000)) != null)
+                //Get Max Volume for each frame
+                float[] sampleBuffer = new float[samplesPerFrame];
+                while (audioFileReader.Read(sampleBuffer, 0, samplesPerFrame) > 0)
                 {
+                    var currentMax = getMaxVolume(sampleBuffer);
+                    maxVolumePerFrame.Add(currentMax);
 
-                    var currentMax = getMaxVolume(frame);
+                    //If the current frame is less than the max volume for the whole track, increase it
                     if (maxVolume < currentMax)
                     {
                         maxVolume = currentMax;
                     }
-
                 }
 
-                wavFileReader.Position = 0;
-
-                List<bool> hasLoudAudio = new List<bool>();
-
-
-                //Loop each frame and grab all samples
-                while ((frame = Varispeed.SampleFrameReader.ReadNextSampleFrames(wavFileReader, samplesPerFrame)) != null)
+                //Normalize the maxVolumePerFrame and create a has loud audio list
+                foreach (var maxVol in maxVolumePerFrame)
                 {
-                    var currentMax = getMaxVolume(frame) / maxVolume;
-                    hasLoudAudio.Add(currentMax >= options.silent_threshold);
+                    hasLoudAudio.Add(maxVol / maxVolume >= options.silent_threshold);
                 }
 
                 var audioFrameCount = hasLoudAudio.Count;
 
-
-                Console.WriteLine(hasLoudAudio);
-
+                //Build Chunks
                 List<bool> shouldIncludeFrame = new List<bool>();
 
                 List<Tuple<int, int, bool>> chunks = new List<Tuple<int, int, bool>>() { Tuple.Create(0, 0, false) };
@@ -141,43 +129,37 @@ namespace Jumpcutter_dot_net
                 chunks.Add(Tuple.Create(chunks.Last().Item2, audioFrameCount, shouldIncludeFrame[(audioFrameCount - 1) - 1]));
                 chunks.RemoveAt(0);
 
-                Console.WriteLine(chunks);
 
-                wavFileReader.Position = 0;
+                //Reset the stream 
+                audioFileReader.Position = 0;
 
+                //Process Chunks
 
-
-
-
-                foreach (var chunk in chunks)
+                using (var writer = new WaveFileWriter(options.temp_dir + @"\finalAudio.wav", audioFileReader.WaveFormat))
                 {
 
-                    var chunkLength = (chunk.Item2 * samplesPerFrame) - (chunk.Item1 * samplesPerFrame);
-                    var sampProv = new SampleChannel(wavFileReader,false);
-                    VarispeedSampleProvider sampleProv;
-
-                    using (sampleProv = new VarispeedSampleProvider(sampProv, new SoundTouchProfile(true, false)))
+                    foreach (var chunk in chunks)
                     {
-                        using (var writer = new WaveFileWriter(options.temp_dir + @"\" + (chunk.Item3 ? "Loud" : "Quiet") + "_chunk_" + chunk.Item1 + " .wav", wavFileReader.WaveFormat))
+
+                        VarispeedSampleProvider sampleProv;
+
+                        using (sampleProv = new VarispeedSampleProvider(audioFileReader, new SoundTouchProfile(true, false)))
                         {
+                            sampleProv.PlaybackRate = (float)(chunk.Item3 ? options.sounded_speed : options.silent_speed );
+
+
+                            var chunkLength = ((chunk.Item2 * samplesPerFrame) - (chunk.Item1 * samplesPerFrame));
+
                             int bufferSize = 10000;
                             float[] buffer = new float[bufferSize];
                             int samplesRead;
                             int totalSamplesRead = 0;
 
-                            
-
                             while ((samplesRead = sampleProv.Read(buffer, 0, bufferSize)) > 0)
                             {
-
-                                writer.WriteSamples(buffer,0, bufferSize);
+                                writer.WriteSamples(buffer, 0, bufferSize);
                                 totalSamplesRead += samplesRead;
 
-                                //If the next chunk we take is more than the chunk length, set the next buffer to fill the chunklength
-                                if ((totalSamplesRead + bufferSize) > chunkLength)
-                                {
-                                    bufferSize = chunkLength - totalSamplesRead;
-                                }
 
                                 //If we have reached the end, exit
                                 if (totalSamplesRead >= chunkLength)
@@ -185,132 +167,34 @@ namespace Jumpcutter_dot_net
                                     break;
                                 }
 
-
+                                //If the next chunk we take is more than the chunk length, set the next buffer to fill the chunklength
+                                if ((totalSamplesRead + bufferSize) > chunkLength)
+                                {
+                                    bufferSize = chunkLength - totalSamplesRead;
+                                }
 
                             }
 
+
+
                         }
-
-
                     }
-                        
-
-
-
-                    // var audioData = ReadNextSampleFrames(wavFileReader, chunkLength);
-                    //
-                    // var soundTouchProfile = new SoundTouchProfile(true, false)
-                    // {
-                    //     Channels = wavFileReader.WaveFormat.Channels,
-                    //     SampleRate = wavFileReader.WaveFormat.SampleRate,
-                    // };
-                    //
-                    //
-                    // var soundTouch = new SoundTouchProcessor(audioData, soundTouchProfile);
-
- 
-                   
-
-
-
-                    //var speedControl = new VarispeedSampleProvider(, 100, new SoundTouchProfile(true, false));
-
-
-
-
-
-
-
-
-
-                    //      outputAudioData = np.zeros((0, audioData.shape[1]))
-                    //      outputPointer = 0
-                    //      
-                    //      lastExistingFrame = None
-                    //      for chunk in chunks:
-                    //          audioChunk = audioData[int(chunk[0] * samplesPerFrame):int(chunk[1] * samplesPerFrame)]
-                    //      
-                    //      
-                    //          sFile = TEMP_FOLDER + "/tempStart.wav"
-                    //          eFile = TEMP_FOLDER + "/tempEnd.wav"
-                    //          wavfile.write(sFile, SAMPLE_RATE, audioChunk)
-                    //          with WavReader(sFile) as reader:
-                    //              with WavWriter(eFile, reader.channels, reader.samplerate) as writer:
-                    //                  tsm = phasevocoder(reader.channels, speed = NEW_SPEED[int(chunk[2])])
-                    //                  tsm.run(reader, writer)
-                    //          _, alteredAudioData = wavfile.read(eFile)
-                    //          leng = alteredAudioData.shape[0]
-                    //          endPointer = outputPointer + leng
-                    //          outputAudioData = np.concatenate((outputAudioData, alteredAudioData / maxAudioVolume))
-                    //      
-                    //          # outputAudioData[outputPointer:endPointer] = alteredAudioData/maxAudioVolume
-                    //      
-                    //      # smooth out transitiion's audio by quickly fading in/out
-                    //      
-                    //                          if leng < AUDIO_FADE_ENVELOPE_SIZE:
-                    //              outputAudioData[outputPointer: endPointer] = 0 # audio is less than 0.01 sec, let's just remove it.
-                    //          else:
-                    //              premask = np.arange(AUDIO_FADE_ENVELOPE_SIZE) / AUDIO_FADE_ENVELOPE_SIZE
-                    //              mask = np.repeat(premask[:, np.newaxis], 2, axis = 1) # make the fade-envelope mask stereo
-                    //              outputAudioData[outputPointer: outputPointer + AUDIO_FADE_ENVELOPE_SIZE] *= mask
-                    //              outputAudioData[endPointer - AUDIO_FADE_ENVELOPE_SIZE:endPointer] *= 1 - mask
-                    //      
-                    //          startOutputFrame = int(math.ceil(outputPointer / samplesPerFrame))
-                    //          endOutputFrame = int(math.ceil(endPointer / samplesPerFrame))
-                    //          for outputFrame in range(startOutputFrame, endOutputFrame):
-                    //              inputFrame = int(chunk[0] + NEW_SPEED[int(chunk[2])] * (outputFrame - startOutputFrame))
-                    //              didItWork = copyFrame(inputFrame, outputFrame)
-                    //              if didItWork:
-                    //                  lastExistingFrame = inputFrame
-                    //              else:
-                    //                  copyFrame(lastExistingFrame, outputFrame)
-                    //      
-                    //          outputPointer = endPointer
-                    //      
-                    //      wavfile.write(TEMP_FOLDER + "/audioNew.wav", SAMPLE_RATE, outputAudioData)
-
-                    // using (var readerStream = WaveFormatConversionStream.CreatePcmStream(wavFileReader))
-                    // {
-                    //     using (var blockStream = new BlockAlignReductionStream(readerStream))
-                    //     {
-                    //
-                    //         var sourceBytesPerSample = (blockStream.WaveFormat.BitsPerSample / 8) * blockStream.WaveFormat.Channels;
-                    //         var sampleChannel = new SampleChannel(blockStream, false);
-                    //         var destBytesPerSample = 4 * sampleChannel.WaveFormat.Channels;y
-                    //
-                    //         //var  length = destBytesPerSample * (readerStream.Length / sourceBytesPerSample);
-                    //
-                    //         for (var i = 0; i <= audioFrameCount; i++)
-                    //         {
-                    //
-                    //             float[] buffer = new float[samplesPerFrame];
-                    //             sampleChannel.Read(buffer, 0, samplesPerFrame);
-                    //             for (var b = 0; b <= buffer.Length; b++)
-                    //             {
-                    //                 var currentMax = getMaxVolume(buffer);
-                    //                 if (maxVolume < currentMax)
-                    //                 {
-                    //                     maxVolume = currentMax;
-                    //                 }
-                    //
-                    //             }
-                    //         }
-                    //     }
-
-                    Console.WriteLine(maxVolume);
-
                 }
-                HashSet<int> framesToDrop = new HashSet<int>();
-                var random = new Random();
-
-                //Drop 500% of random frames
-                for (var i = 0; i < options.frame_count * 5; i += 1)
-                {
-                    //framesToDrop.Add(random.Next(1, options.frame_count));
-                }
-
-                return new List<int>(framesToDrop);
             }
+
+
+            HashSet<int> framesToDrop = new HashSet<int>();
+            var random = new Random();
+
+            //Drop 500% of random frames
+            for (var i = 0; i < options.frame_count * 5; i += 1)
+            {
+                framesToDrop.Add(random.Next(1, options.frame_count));
+            }
+
+            return new List<int>(framesToDrop);
+
+
         }
 
 
