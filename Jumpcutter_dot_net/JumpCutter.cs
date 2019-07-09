@@ -12,7 +12,6 @@ using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 using System.Linq;
 using Varispeed.SoundTouch;
-
 namespace Jumpcutter_dot_net
 {
     internal class JumpCutter
@@ -33,9 +32,30 @@ namespace Jumpcutter_dot_net
         {
             this.options = options;
 
+            if (options.download_ffmpeg == true)
+            {
+                //Download FFMPEG
+                Console.WriteLine("Getting Latest FFmpeg...");
+                var ffmpeg = FFmpeg.GetLatestVersion();
+                try
+                {
+                    ffmpeg.Wait();
 
-            //Download FFMPEG
-            FFmpeg.GetLatestVersion().Wait();
+                    if (ffmpeg.Status == System.Threading.Tasks.TaskStatus.RanToCompletion)
+                    {
+                        Console.WriteLine("FFMpeg is Up to date");
+                    }
+                    else
+                    {
+                        throw new JCException("Download FFMpeg Task Failed to complete");
+                    }
+                }
+                catch (Exception e)
+                {
+                    throw new JCException("Could not download FFmpeg, please allow this application network access, or copy the ffmpeg.exe and ffprobe.exe to the bin dir", e);
+                }
+            }
+
 
             //Check the input file and output file
             handleInputOutputAndTemp();
@@ -44,16 +64,19 @@ namespace Jumpcutter_dot_net
             inputVideo = new VideoCapture(videoInputFile.FullName);
 
             //Get the video framerate 
-            Console.WriteLine("Getting Video Data...");
-            if (options.frame_rate == null) getVideoFrameData();
+            Console.Write("Getting Video Data... ");
+            getVideoFrameData();
 
             //Prepare the audio
+            Console.WriteLine("Extracting Audio...");
             prepareAudio();
 
             //Process the audio
+            Console.WriteLine("Processing Audio...");
             var framesToRender = processAudio();
 
 
+            Console.WriteLine("Processing video...");
             //Init output video
             using (outputVideo = new VideoWriter(tempVideo, Options.VIDEO_CODEC, (double)options.frame_rate, options.frame_size, true))
             {
@@ -79,13 +102,24 @@ namespace Jumpcutter_dot_net
 
                 //Samples of audio per frame
                 var samplesPerFrame = (int)((sampleRate * audioFileReader.WaveFormat.Channels) / (double)options.frame_rate);
-
                 List<float> maxVolumePerFrame = new List<float>();
 
                 //Get Max Volume for each frame
                 float[] sampleBuffer = new float[samplesPerFrame];
-                while (audioFileReader.Read(sampleBuffer, 0, samplesPerFrame) > 0)
+                int samplesRead;
+
+                var loopCount = 0;
+                while ((samplesRead = audioFileReader.Read(sampleBuffer, 0, samplesPerFrame)) > 0)
                 {
+                    loopCount++;
+
+                    reportStatus("Reading frame volume {0} out of {1} {2}", loopCount, options.frame_count, 0);
+
+                    if (samplesRead != samplesPerFrame)
+                    {
+                        sampleBuffer = sampleBuffer.Take(samplesRead).ToArray();
+                    }
+
                     var currentMax = getMaxVolume(sampleBuffer);
                     maxVolumePerFrame.Add(currentMax);
 
@@ -94,6 +128,18 @@ namespace Jumpcutter_dot_net
                     {
                         maxVolume = currentMax;
                     }
+
+                }
+
+
+                reportStatus("Reading frame volume {0} out of {1} {2}", options.frame_count, options.frame_count, last: true);
+
+
+                //If the audio track is longer than video track, trim the front of the audio track (Does this always work)?
+                var trackLengthDifference = maxVolumePerFrame.Count - options.frame_count;
+                if (trackLengthDifference > 0)
+                {
+                    maxVolumePerFrame.RemoveRange(0, trackLengthDifference);
                 }
 
                 //Normalize the maxVolumePerFrame and create a has loud audio list
@@ -102,10 +148,11 @@ namespace Jumpcutter_dot_net
                     hasLoudAudio.Add(maxVol / maxVolume >= options.silent_threshold);
                 }
 
+
                 var audioFrameCount = hasLoudAudio.Count;
 
                 //Build Chunks
-                List<bool> shouldIncludeFrame = new List<bool>();
+                List<bool> audioLevelHigh = new List<bool>();
 
                 List<Tuple<int, int, bool>> chunks = new List<Tuple<int, int, bool>>() { Tuple.Create(0, 0, false) };
 
@@ -118,90 +165,136 @@ namespace Jumpcutter_dot_net
                     if (startIndex + count > audioFrameCount - 1) count = (audioFrameCount - startIndex) - 1;
                     if (startIndex < 0) startIndex = 0;
 
-                    shouldIncludeFrame.Add(hasLoudAudio.GetRange(startIndex, count).Any(p => p == true));
+                    audioLevelHigh.Add(hasLoudAudio.GetRange(startIndex, count).Any(p => p == true));
 
-                    if (i >= 1 && shouldIncludeFrame[i] != shouldIncludeFrame[i - 1])
+                    if (i >= 1 && audioLevelHigh[i] != audioLevelHigh[i - 1])
                     { // Did we flip?
-                        chunks.Add(Tuple.Create(chunks.Last().Item2, i, shouldIncludeFrame[i - 1]));
+                        chunks.Add(Tuple.Create(chunks.Last().Item2, i, audioLevelHigh[i - 1]));
                     }
 
                 }
-
-                chunks.Add(Tuple.Create(chunks.Last().Item2, audioFrameCount, shouldIncludeFrame[(audioFrameCount - 1) - 1]));
+                //Add the last block
+                chunks.Add(Tuple.Create(chunks.Last().Item2, audioFrameCount, audioLevelHigh[(audioFrameCount - 1) - 1]));
                 chunks.RemoveAt(0);
-
 
                 //Reset the stream 
                 audioFileReader.Position = 0;
 
-                //Process Chunks
+                float totalDuration = 0;
+                //Caulucate duration difference 
+                foreach (var chunk in chunks)
+                {
+                    var chunkLength = chunk.Item2 - chunk.Item1;
+                    var playbackRate = (float)(chunk.Item3 ? options.sounded_speed : options.silent_speed);
+                    var duration = chunkLength / playbackRate;
+                    totalDuration += duration;
 
+                }
+
+                var durationChange = 100 - (int)((((totalDuration / options.frame_count)) * 100));
+                Console.WriteLine("Decreased length of video by: " + durationChange + "%");
+                Console.WriteLine("Old duration " + options.frame_count);
+                Console.WriteLine("New Duration: " + (int)totalDuration);
+
+                //Process Chunks
                 using (var writer = new WaveFileWriter(options.temp_dir + @"\finalAudio.wav", audioFileReader.WaveFormat))
                 {
 
                     var outputPointer = 0;
-
+                    var chuckPos = 0;
                     foreach (var chunk in chunks)
                     {
+                        chuckPos++;
+                        reportStatus("Writing new audio {0} out of {1} {2}", chuckPos, chunks.Count, 0);
+
+
                         var audoFrameLength = chunk.Item2 - chunk.Item1;
                         var chunkLength = ((chunk.Item2 * samplesPerFrame) - (chunk.Item1 * samplesPerFrame));
                         int totalSamplesRead = 0;
                         var playbackRate = (float)(chunk.Item3 ? options.sounded_speed : options.silent_speed);
-                        VarispeedSampleProvider sampleProv;
 
-                        using (sampleProv = new VarispeedSampleProvider(audioFileReader, new SoundTouchProfile(true, false)))
+                        ///TODO Create the soundtouch outside this loop!!!!!!
+                        SoundTouch soundTouch = new SoundTouch();
+                        soundTouch.SetRate(1.0f);
+                        soundTouch.SetPitchOctaves(0f);
+                        soundTouch.SetTempo(playbackRate);
+                        soundTouch.SetSampleRate((int)(audioFileReader.WaveFormat.SampleRate));
+                        soundTouch.SetChannels(audioFileReader.WaveFormat.Channels);
+                        soundTouch.SetUseQuickSeek(false);
+                        soundTouch.SetUseAntiAliasing(false);
+                        //Keep going until we have all the data in the chunk
+                        while (totalSamplesRead < chunkLength)
                         {
-                            sampleProv.PlaybackRate = playbackRate;
+                            //Set the buffer to 10k or the remaining amount if less than 10k
+                            int bufferSize = chunkLength - totalSamplesRead < 10000 ? chunkLength - totalSamplesRead : 10000;
 
-                            int bufferSize = 10000;
-                            float[] buffer = new float[bufferSize];
-                            int samplesRead;
+                            float[] inputBuffer = new float[bufferSize];
+                            var readCount =  audioFileReader.Read(inputBuffer, 0, bufferSize);
+                            Console.WriteLine(readCount);
+                            soundTouch.PutSamples(inputBuffer, inputBuffer.Length);
+                            totalSamplesRead += bufferSize;
 
-
-                            while ((samplesRead = sampleProv.Read(buffer, 0, bufferSize)) > 0)
+                            var outputSamplesCount = (int) (inputBuffer.Length);
+                            float[] outputBuffer = new float[outputSamplesCount];
+                            while ((readCount = soundTouch.ReceiveSamples(outputBuffer, outputSamplesCount)) > 0)
                             {
-                                writer.WriteSamples(buffer, 0, bufferSize);
-                                totalSamplesRead += samplesRead;
-
-
-                                //If we have reached the end, exit
-                                if (totalSamplesRead >= chunkLength)
-                                {
-                                    break;
-                                }
-
-                                //If the next chunk we take is more than the chunk length, set the next buffer to fill the chunklength
-                                if ((totalSamplesRead + bufferSize) > chunkLength)
-                                {
-                                    bufferSize = chunkLength - totalSamplesRead;
-                                }
-
+                                writer.WriteSamples(outputBuffer, 0, outputSamplesCount);
                             }
-
-
-
+                            Console.WriteLine(readCount);
+                            
+                            
                         }
+                                                                                                              
+
+                        //  while ((samplesRead = sampleProv.Read(buffer, 0, bufferSize)) > 0)
+                        //  //while (() > 0)
+                        //  {
+                        //      
+                        //      totalSamplesRead += samplesRead;
+                        //
+                        //
+                        //      //If we have reached the end, exit
+                        //      if (totalSamplesRead >= chunkLength)
+                        //      {
+                        //          break;
+                        //      }
+                        //
+                        //      //If the next chunk we take is more than the chunk length, set the next buffer to fill the //chunklength
+                        //      if ((totalSamplesRead + bufferSize) > chunkLength)
+                        //      {
+                        //          bufferSize = chunkLength - totalSamplesRead;
+                        //      }
+                        //
+                        // }
+
+
+
+
 
                         var endPointer = outputPointer + totalSamplesRead;
                         var startOutputFrame = outputPointer / samplesPerFrame;
                         var endOutputFrame = endPointer / samplesPerFrame;
 
-                        for (var outputFrame = startOutputFrame; outputFrame < endOutputFrame; outputFrame++)
+
+                        for (var outputFrame = startOutputFrame; outputFrame <= endOutputFrame; outputFrame++)
                         {
                             var inputFrame = (int)(chunk.Item1 + playbackRate * (outputFrame - startOutputFrame));
                             framesToRender.Add(inputFrame);
                         }
 
+
+                        outputPointer = endPointer;
+
+
+
+
+
                     }
-
-
-
                 }
 
-             
-
-
+                reportStatus("Writing new audio {0} out of {1} {2}", chunks.Count, chunks.Count, 2, true);
             }
+
             return new List<int>(framesToRender);
         }
 
@@ -226,14 +319,12 @@ namespace Jumpcutter_dot_net
             ///
             if (!File.Exists(tempAudio))
             {
-                Console.WriteLine("Extracting audio...");
                 var conv = Conversion.ExtractAudio(videoInputFile.FullName, tempAudio);
                 conv.Start().Wait();
-                Console.WriteLine("Audio Extracted.");
             }
             else
             {
-                Console.WriteLine("DEBUG.... SKIPPING CONVERSION!!!");
+                //Console.WriteLine("DEBUG.... SKIPPING CONVERSION!!!");
             }
         }
 
@@ -242,23 +333,14 @@ namespace Jumpcutter_dot_net
         private void writeFinalVideo(List<int> framesToRender, string audioFile)
         {
 
-            Console.WriteLine("Building video...");
-
             //Update status every x frames, with a 0.1% rate
-            var updateStatus = framesToRender.Count / 1000;
             var lastFrame = 0;
             var count = 0;
 
             foreach (var frame in framesToRender)
             {
+                reportStatus("Writing frame {0} out of {1} {2}", count, framesToRender.Count, 2);
                 count++;
-
-                if (count % updateStatus == 0)
-                {
-                    var pc = ((double)count / framesToRender.Count * 100);
-                    Console.Write("\rWriting frame " + count + " out of " + framesToRender.Count + " (" + pc.ToString("0.00") + "%)");
-                }
-
                 if (frame != lastFrame)
                 {
                     var framesToMove = frame - lastFrame;
@@ -281,7 +363,8 @@ namespace Jumpcutter_dot_net
                 lastFrame = frame;
 
             }
-            Console.WriteLine("\rWriting frame " + options.frame_count + " out of " + options.frame_count + " (100.00%)");
+            reportStatus("Writing frame {0} out of {1} {2}", options.frame_count, options.frame_count, 2, true);
+
         }
 
         private void addAudioToVideo()
@@ -347,7 +430,7 @@ namespace Jumpcutter_dot_net
                 //videoOutputFile.Create();
                 //videoOutputFile.Delete();
             }
-            catch (Exception e) { throw new JCException("Unable to create output file " + options.output_file + "! " + e.Message); }
+            catch (Exception e) { throw new JCException("Unable to create output file " + options.output_file + "! ", e); }
 
             var tempdir = new DirectoryInfo(videoOutputFile.Directory + @"\" + videoInputFile.Name + "_temp");
             options.temp_dir = tempdir.FullName;
@@ -356,27 +439,35 @@ namespace Jumpcutter_dot_net
             ////TODO DEBUG
             if (tempdir.Exists)
             {
-                //     tempdir.Delete(true);
+                //tempdir.Delete(true);
+            }
+            else
+            {
+                tempdir.Create();
             }
 
-            //tempdir.Create();
+
             tempVideo = options.temp_dir + @"\" + "video_no_audio.mp4";
             tempAudio = options.temp_dir + @"\" + "fullaudio.wav";
         }
 
         void getVideoFrameData()
         {
+            if (options.frame_rate == null)
+            {
+                options.frame_rate = inputVideo.GetCaptureProperty(Emgu.CV.CvEnum.CapProp.Fps);
+            }
 
-            var frameRate = inputVideo.GetCaptureProperty(Emgu.CV.CvEnum.CapProp.Fps);
+
             var frameWidth = (int)inputVideo.GetCaptureProperty(Emgu.CV.CvEnum.CapProp.FrameWidth);
             var frameHeight = (int)inputVideo.GetCaptureProperty(Emgu.CV.CvEnum.CapProp.FrameHeight);
             var frameCount = (int)(inputVideo.GetCaptureProperty(Emgu.CV.CvEnum.CapProp.FrameCount)); ;
-            var videoLength = (int)(frameCount / frameRate);
+            var videoLength = (int)(frameCount / options.frame_rate);
 
             //Just to avoid numbers like 29.99999954
-            frameRate = Math.Round(frameRate, 4);
+            //frameRate = Math.Round(frameRate, 4);
 
-            options.frame_rate = frameRate;
+
             options.frame_count = frameCount;
             options.orignial_length = videoLength;
             options.frame_size = new System.Drawing.Size(frameWidth, frameHeight);
@@ -386,8 +477,7 @@ namespace Jumpcutter_dot_net
             //options.video_codec = codec;
 
 
-            Console.WriteLine("Frame Rate Detected as: " + options.frame_rate);
-            Console.WriteLine("Duration Detected as: " + options.orignial_length);
+            Console.WriteLine(options.frame_rate + " fps | " + options.orignial_length + " seconds | " + options.frame_count + " frames | " + options.frame_size.Height + "p");
 
         }
 
@@ -401,5 +491,25 @@ namespace Jumpcutter_dot_net
         //    return inputVideo.QueryFrame();
         //}
 
+
+        public void reportStatus(string message, int current, int total, int decimalPresision = 1, bool last = false)
+        {
+
+            var rate = 100 + (decimalPresision * 1000);
+            var updateStatus = total / rate;
+
+            if (current % updateStatus == 0)
+            {
+                var pc = ((double)current / total);
+                Console.Write("\r"
+                    + String.Format(message, current, total,
+                    "(" + pc.ToString("0." + String.Concat(Enumerable.Repeat("0", decimalPresision)) + "%)")));
+            }
+
+            if (last)
+            {
+                Console.WriteLine();
+            }
+        }
     }
 }
