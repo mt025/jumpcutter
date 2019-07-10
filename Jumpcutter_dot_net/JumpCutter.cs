@@ -2,14 +2,9 @@
 using System;
 using System.Globalization;
 using Emgu.CV;
-using Emgu.CV.UI;
-using Emgu.CV.Structure;
-using Emgu.Util;
 using System.Collections.Generic;
 using Xabe.FFmpeg;
-using Xabe.FFmpeg.Model;
 using NAudio.Wave;
-using NAudio.Wave.SampleProviders;
 using System.Linq;
 namespace Jumpcutter_dot_net
 {
@@ -31,6 +26,8 @@ namespace Jumpcutter_dot_net
         {
             this.options = options;
 
+
+            //Move all the below from the constructor
             if (options.download_ffmpeg == true)
             {
                 //Download FFMPEG
@@ -107,6 +104,7 @@ namespace Jumpcutter_dot_net
                 float[] sampleBuffer = new float[samplesPerFrame];
                 int samplesRead;
 
+                ///TODO Move volume reading to own function
                 var loopCount = 0;
                 while ((samplesRead = audioFileReader.Read(sampleBuffer, 0, samplesPerFrame)) > 0)
                 {
@@ -142,6 +140,7 @@ namespace Jumpcutter_dot_net
                 }
 
                 //Normalize the maxVolumePerFrame and create a has loud audio list
+                ///TODO make sure this isnt doing anything more than 5 frames (ish)
                 foreach (var maxVol in maxVolumePerFrame)
                 {
                     hasLoudAudio.Add(maxVol / maxVolume >= options.silent_threshold);
@@ -150,6 +149,7 @@ namespace Jumpcutter_dot_net
 
                 var audioFrameCount = hasLoudAudio.Count;
 
+                ///TODO move build chunks to own function
                 //Build Chunks
                 List<bool> audioLevelHigh = new List<bool>();
 
@@ -179,12 +179,13 @@ namespace Jumpcutter_dot_net
                 //Reset the stream 
                 audioFileReader.Position = 0;
 
+
                 float totalDuration = 0;
                 //Caulucate duration difference 
                 foreach (var chunk in chunks)
                 {
                     var chunkLength = chunk.Item2 - chunk.Item1;
-                    var playbackRate = (float)(chunk.Item3 ? options.silent_speed : options.sounded_speed );
+                    var playbackRate = (float)(chunk.Item3 ? options.silent_speed : options.sounded_speed);
                     var duration = chunkLength / playbackRate;
                     totalDuration += duration;
 
@@ -195,6 +196,7 @@ namespace Jumpcutter_dot_net
                 Console.WriteLine("Old duration " + options.frame_count);
                 Console.WriteLine("New Duration: " + (int)totalDuration);
 
+                ///TODO process chunks to own function
                 //Process Chunks
                 using (var writer = new WaveFileWriter(options.temp_dir + @"\finalAudio.wav", audioFileReader.WaveFormat))
                 {
@@ -206,7 +208,7 @@ namespace Jumpcutter_dot_net
                         var audoFrameLength = chunk.Item2 - chunk.Item1;
                         var chunkLength = ((chunk.Item2 * samplesPerFrame) - (chunk.Item1 * samplesPerFrame));
                         int totalSamplesRead = 0;
-                        var playbackRate = (float)(chunk.Item3 ?  options.sounded_speed : options.silent_speed );
+                        var playbackRate = (float)(chunk.Item3 ? options.sounded_speed : options.silent_speed);
 
 
                         int bufferSize = chunkLength < 6750 ? chunkLength : 6750;
@@ -218,6 +220,7 @@ namespace Jumpcutter_dot_net
                         samplesRead = 0;
 
                         ///TODO Create the soundtouch outside this loop, and just reset it!!!!!!
+                        //////TODO move soundtouch processing to own function
                         SoundTouch.SoundTouch<float, double> soundTouch
                          = new SoundTouch.SoundTouch<float, double>();
 
@@ -229,6 +232,8 @@ namespace Jumpcutter_dot_net
                         soundTouch.SetChannels(audioFileReader.WaveFormat.Channels);
                         var readAll = false;
                         var nSamples = 0;
+
+
                         while (!readAll || soundTouch.AvailableSamples > 0)
                         {
                             if (!readAll)
@@ -263,7 +268,7 @@ namespace Jumpcutter_dot_net
 
                         }
 
-                     
+
 
 
                         ////TODO Check that this is right
@@ -295,10 +300,6 @@ namespace Jumpcutter_dot_net
             return new List<int>(framesToRender);
         }
 
-
-
-
-
         private float getMaxVolume(float[] s)
         {
             var maxv = s.Max();
@@ -324,7 +325,6 @@ namespace Jumpcutter_dot_net
                 //Console.WriteLine("DEBUG.... SKIPPING CONVERSION!!!");
             }
         }
-
 
 
         private void writeFinalVideo(List<int> framesToRender, string audioFile)
@@ -367,6 +367,7 @@ namespace Jumpcutter_dot_net
         private void addAudioToVideo()
         {
             ///TODO write progress
+            ///TODO move this away from FFMpeg to native
             Console.WriteLine("Joining video and audio...");
             //Concat the audio and video
             var tempAudio = options.temp_dir + @"\" + "finalAudio.wav";
@@ -376,7 +377,7 @@ namespace Jumpcutter_dot_net
 
         }
 
-        public void handleInputOutputAndTemp()
+        private void handleInputOutputAndTemp()
         {
 
             //Does the extention end .mp4, if so we will assume the file is a mp4 file
@@ -448,7 +449,7 @@ namespace Jumpcutter_dot_net
             tempAudio = options.temp_dir + @"\" + "fullaudio.wav";
         }
 
-        void getVideoFrameData()
+        private void getVideoFrameData()
         {
             if (options.frame_rate == null)
             {
@@ -479,17 +480,7 @@ namespace Jumpcutter_dot_net
         }
 
 
-
-        //This function is slower than streaming the whole file and dropping un-needed frames
-        //private Mat getFrameAt(int frameNumber)
-        //{
-        //
-        //    inputVideo.SetCaptureProperty(Emgu.CV.CvEnum.CapProp.PosFrames, frameNumber);
-        //    return inputVideo.QueryFrame();
-        //}
-
-
-        public void reportStatus(string message, int current, int total, int decimalPresision = 1, bool last = false)
+        private void reportStatus(string message, int current, int total, int decimalPresision = 1, bool last = false)
         {
 
             var rate = 100 + (decimalPresision * 1000);
@@ -509,5 +500,14 @@ namespace Jumpcutter_dot_net
                 Console.WriteLine();
             }
         }
+
+        //This function is slower than streaming the whole file and dropping un-needed frames
+        private Mat getFrameAt(int frameNumber)
+        {
+        
+            inputVideo.SetCaptureProperty(Emgu.CV.CvEnum.CapProp.PosFrames, frameNumber);
+            return inputVideo.QueryFrame();
+        }
+
     }
 }
