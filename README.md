@@ -17,5 +17,5 @@ This is being re-written to work with .net, at same same time updating features
 * Run multiple instances at once
 
 ## Some other things I'm intrested in:
-Running as a service to pickup files from a directory
-Live jumpcutting on youtube videos
+* Running as a service to pickup files from a directory
+* Live jumpcutting on youtube videos
