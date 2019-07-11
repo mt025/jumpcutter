@@ -13,6 +13,7 @@ namespace Jumpcutter_dot_net
         static void Main(string[] args)
         {
 
+            Console.WriteLine();
 
             Options options = new Options();
             var ops = Parser.Default.ParseArguments<Options>(args).WithParsed(x => options = x);
