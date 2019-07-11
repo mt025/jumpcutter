@@ -14,30 +14,57 @@ namespace Jumpcutter_dot_net
         {
 
 
-           Options options = new Options();
-           var ops = Parser.Default.ParseArguments<Options>(args).WithParsed(x=> options = x);
+            Options options = new Options();
+            var ops = Parser.Default.ParseArguments<Options>(args).WithParsed(x => options = x);
 
             if (ops.Tag == ParserResultType.Parsed)
             {
 
                 try
                 {
-                    new JumpCutter(options);
+                    try
+                    {
+                        var jc = new JumpCutter(options);
+                        jc.Process();
+                    }
+                    catch (Exception e)
+                    {
+                        throw new JCException("\tUncaught Exception", e);
+                    }
+                    
+
                 }
                 catch (JCException e)
                 {
-                    Console.Error.WriteLine("Error: " + e.Message);
+                    Console.Error.WriteLine("\tError: " + e.Message);
+                    var ie = e.InnerException;
+                    var count = 0;
+                    while (ie != null) {
+                        count++;
+                        var tabs = String.Concat(Enumerable.Repeat("\t", count));
+                        Console.Error.WriteLine(tabs+"Inner Error: " + ie.Message);
+                        ie = ie.InnerException;
+                    }
+                    
                 }
-                finally {
-                    if (string.IsNullOrEmpty(options.temp_dir)) {
-                        Directory.Delete(options.temp_dir,true);
+                finally
+                {
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(options.temp_dir))
+                        {
+                            var tempdir = new DirectoryInfo(options.temp_dir);
+                            if(tempdir.Exists)
+                                tempdir.Delete(true);
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        Console.Error.WriteLine("Failed to cleanup temp dir " + options.temp_dir);
                     }
 
                 }
-               // catch (Exception e) {
-               //     Console.Error.WriteLine("Runtime Error:");
-               //     Console.Error.WriteLine(e);
-               // }
+
             }
             //Console.ReadKey();
         }

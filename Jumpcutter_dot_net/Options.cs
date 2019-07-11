@@ -42,6 +42,10 @@ namespace Jumpcutter_dot_net
         [Option(Required = false, Default = 75, HelpText = "Quality of frames to be extracted from input video.")]
         public int frame_quality { get; set; }
 
+        [Option(Required = false, Default = true, HelpText = "Download FFmpeg before starting (If set to false place FFMpeg.exe and FFProbe.exe in bin dir)")]
+        public bool download_ffmpeg { get; set; }
+
+
 
 
         internal int orignial_length;
@@ -51,6 +55,7 @@ namespace Jumpcutter_dot_net
         //VideoWriter.Fourcc('m', 'p', '4', 'v');
        
         internal string temp_dir;
+
 
         //smooth out transitiion's audio by quickly fading in/out (arbitrary magic number whatever)
         internal const int AUDIO_FADE_ENVELOPE_SIZE = 400;
