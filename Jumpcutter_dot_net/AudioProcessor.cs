@@ -68,12 +68,8 @@ namespace Jumpcutter_dot_net
         {
 
             List<int> videoFramesToRender = new List<int>();
-            List<bool> hasLoudAudioPerFrame = processVolumes();
 
-
-            trimExtraAudio(hasLoudAudioPerFrame);
-            var chunks = buildChunks(hasLoudAudioPerFrame);
-            calculateTimeReduction(chunks);
+            var chunks = buildChunks();
 
             using (var audioFileWriter = new WaveFileWriter(options.temp_dir + @"\finalAudio.wav", audioFileReader.WaveFormat))
             {
@@ -83,7 +79,7 @@ namespace Jumpcutter_dot_net
                 {
                     var chunkSpeed = chunk.getSpeed(options);
                     normalSpeed = chunkSpeed == 1;
-                    var totalSamplesRead = (normalSpeed ?  standardAudio(chunk, audioFileReader, audioFileWriter) : vocodeAudio(chunk, audioFileReader, audioFileWriter));
+                    var totalSamplesRead = (normalSpeed ? standardAudio(chunk, audioFileReader, audioFileWriter) : vocodeAudio(chunk, audioFileReader, audioFileWriter));
                     //Build render list
                     var frameCount = (chunk.endFrame - chunk.startFrame);
                     //Count frames to render
@@ -114,102 +110,105 @@ namespace Jumpcutter_dot_net
 
             audioFileReader.Dispose();
 
-
-
-
-
-
-
-
             return new List<int>(videoFramesToRender);
         }
 
-
-
-        private List<bool> processVolumes()
+        private List<Chunk> buildChunks()
         {
-            List<bool> hasLoudAudioPerFrame = new List<bool>();
+
+            var chunks = new List<Chunk>();
 
             var bufferCount = samplesPerFrame;
-            //Get Max Volume for each frame
             float[] sampleBuffer = new float[bufferCount];
             int samplesRead;
+            var currentFrame = 0;
+            bool? lastLoudFrame = null;
+            Queue<float[]> lastBuffers = new Queue<float[]>();
 
-            var loopCount = 0;
             while ((samplesRead = audioFileReader.Read(sampleBuffer, 0, bufferCount)) > 0)
             {
-                loopCount++;
+                //Report output
+                utils.reportStatus(READ_VOLUME_MESSAGE, currentFrame, options.frame_count, 0);
 
-                utils.reportStatus(READ_VOLUME_MESSAGE, loopCount, options.frame_count, 0);
+                //If its not the whole buffer returned, take the remaining amount
+                if (samplesRead != bufferCount) sampleBuffer = sampleBuffer.Take(samplesRead).ToArray();
 
-                //If its not the whole buffer, take the remaining amount
-                if (samplesRead != bufferCount)
-                {
-                    sampleBuffer = sampleBuffer.Take(samplesRead).ToArray();
-                }
-
+                //Get max volume of current frame
                 var currentMax = getMaxVolume(sampleBuffer);
-                hasLoudAudioPerFrame.Add(currentMax / maxVolume >= options.silent_threshold);
 
                 //If the current frame is less than the max volume for the whole track, increase it
-                if (maxVolume < currentMax)
+                if (maxVolume < currentMax) maxVolume = currentMax;
+
+                //Is the frame loud?
+                var loudFrame = currentMax / maxVolume >= options.silent_threshold;
+
+                //Has the loudness changed?
+                if (lastLoudFrame != null && lastLoudFrame != loudFrame)
                 {
-                    maxVolume = currentMax;
+
+                    int takeFramesUntil;
+
+                    //If the next chunk is going to be loud offset, current quiet frame by - frame_margin
+                    if (loudFrame && currentFrame != 0)
+                    {
+                        takeFramesUntil = currentFrame - options.frame_margin;
+                    }
+                    //If the next chunk is going to be quiet, offset loud by + frame_margin
+                    else
+                    {
+                        takeFramesUntil = currentFrame + options.frame_margin;
+                        if (takeFramesUntil > options.frame_count) { takeFramesUntil = options.frame_count; }
+                    }
+
+
+                    //If framesToTake is larger than the current frame count set it to the frame count
+                    if (takeFramesUntil > options.frame_count) takeFramesUntil = options.frame_count;
+
+                    //Add this chunk
+                    var lastEnd = chunks.Any() ? chunks.Last().endFrame : 0;
+
+                    var difference = takeFramesUntil - lastEnd;
+
+                    //Unless its less frames than 0
+                    if (difference > 0)
+                    {
+                        chunks.Add(new Chunk(lastEnd, takeFramesUntil, (bool)lastLoudFrame));
+                    }
+
+                }
+                else {
+                    //Write the last buffer to file
+
                 }
 
+
+                lastLoudFrame = loudFrame;
+                currentFrame++;
+
+                ////Not sure if we are going to need the previous frame_margin buffers yet, we will see.... remove if not used in future
+                if (lastBuffers.Count > options.frame_margin) lastBuffers.Dequeue();
+                lastBuffers.Enqueue(sampleBuffer);
             }
 
+            if (options.frame_count - chunks.Last().endFrame > 0)
+            {
+                chunks.Add(new Chunk(chunks.Last().endFrame, options.frame_count, (bool)lastLoudFrame));
+            }
 
             utils.reportStatus(READ_VOLUME_MESSAGE, options.frame_count, options.frame_count, last: true);
-
             Console.WriteLine("\tMax Audio Volume is " + maxVolume + "/1");
+            calculateTimeReduction(chunks);
 
             //Reset the stream 
             audioFileReader.Position = 0;
 
-
-            return hasLoudAudioPerFrame;
-        }
-         
-        private List<Chunk> buildChunks(List<bool> hasLoudAudio)
-        {
-            var chunks = new List<Chunk>();
-
-            List<bool> audioLevelHigh = new List<bool>();
-
-            chunks.Add(new Chunk(0, 0, false));
-
-
-            for (var i = 0; i < options.frame_count; i++)
-            {
-                var startIndex = (i - options.frame_margin);
-                var count = 1 + options.frame_margin;
-
-                if (startIndex + count > options.frame_count - 1) count = (options.frame_count - startIndex) - 1;
-                if (startIndex < 0) startIndex = 0;
-
-                audioLevelHigh.Add(hasLoudAudio.GetRange(startIndex, count).Any(p => p == true));
-
-                if (i >= 1 && audioLevelHigh[i] != audioLevelHigh[i - 1])
-                {
-                    //If the audio level has changed, start a new chunk
-                    chunks.Add(new Chunk(chunks.Last().endFrame, i, audioLevelHigh[i - 1]));
-                }
-
-            }
-            //Add the last block
-            chunks.Add(new Chunk(chunks.Last().endFrame, options.frame_count, audioLevelHigh[(options.frame_count - 1) - 1]));
-            chunks.RemoveAt(0);
-
-
             return chunks;
-
         }
 
         private void calculateTimeReduction(List<Chunk> chunks)
         {
             double totalDuration = 0;
-            /////Caulucate duration difference 
+            //Caulucate duration difference 
             foreach (var chunk in chunks)
             {
                 var chunkLength = chunk.endFrame - chunk.startFrame;
@@ -260,7 +259,7 @@ namespace Jumpcutter_dot_net
             {
                 if (!readAll)
                 {
-                    utils.reportStatus(WRITE_AUDIO_MESSAGE, chunk.startFrame + (totalSamplesRead / samplesPerFrame), options.frame_count, 2,"VOC");
+                    utils.reportStatus(WRITE_AUDIO_MESSAGE, chunk.startFrame + (totalSamplesRead / samplesPerFrame), options.frame_count, 2, "VOC");
 
                     //Shorten buffer if needed
                     if (bufferSize > chunkSamplesLength - totalSamplesRead)
@@ -326,11 +325,12 @@ namespace Jumpcutter_dot_net
             while (!readAll)
             {
 
-                utils.reportStatus(WRITE_AUDIO_MESSAGE, chunk.startFrame + (totalSamplesRead / samplesPerFrame), options.frame_count, 2,"STD");
+                utils.reportStatus(WRITE_AUDIO_MESSAGE, chunk.startFrame + (totalSamplesRead / samplesPerFrame), options.frame_count, 2, "STD");
 
 
                 //Shorten buffer if needed
-                if (bufferSize > chunkSamplesLength - totalSamplesRead) {
+                if (bufferSize > chunkSamplesLength - totalSamplesRead)
+                {
                     bufferSize = chunkSamplesLength - totalSamplesRead;
                 }
 
