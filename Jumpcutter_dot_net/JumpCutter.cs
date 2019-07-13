@@ -8,7 +8,7 @@ using NAudio.Wave;
 using System.Linq;
 namespace Jumpcutter_dot_net
 {
-    internal class JumpCutter
+    public class JumpCutter
     {
         private readonly Options options;
 
@@ -16,13 +16,19 @@ namespace Jumpcutter_dot_net
         private VideoProcessor videoProcessor;
 
 
-        public JumpCutter(Options options)
+        public JumpCutter(Options options,TextWriter tw = null)
         {
+            if(tw != null)
+            {
+                Console.SetOut(tw);
+                Console.SetError(tw);
+            }
+
             this.options = options;
 
         }
 
-        internal void Process()
+        public void Process()
         {
 
 
@@ -52,7 +58,7 @@ namespace Jumpcutter_dot_net
 
             //Process the audio
             Console.WriteLine("Processing Audio...");
-            var framesToRender = audioProcessor.processAudio();
+            var framesToRender = audioProcessor.writeAudio();
             Console.WriteLine();
 
             //Process the video

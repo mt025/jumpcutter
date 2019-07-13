@@ -21,12 +21,16 @@ namespace Jumpcutter_dot_net
                 var pc = ((double)current / total);
                 if (string.IsNullOrEmpty(additonal))
                 {
-                    Console.Write("\r"
+                    Console.Write(last ? "" : "\r"
                         + string.Format(message, current, total, "(" + pc.ToString("0." + String.Concat(Enumerable.Repeat("0", decimalPresision)) + "%)")));
                 }
                 else
                 {
-                    Console.Write("\r"
+                    if(last)
+                    {
+                        Console.WriteLine("\r");
+                    }
+                    Console.Write(last ? "" : "\r"
           + string.Format(message,additonal, current, total, "(" + pc.ToString("0." + String.Concat(Enumerable.Repeat("0", decimalPresision)) + "%)")));
                 }
             }

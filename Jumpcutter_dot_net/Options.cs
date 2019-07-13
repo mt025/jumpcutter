@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace Jumpcutter_dot_net
 {
-    class Options
+    public class Options
     {
         //[Option('u', "input_file", Required = true, HelpText = "The video file or youtube URL you want modified")]
         [Option('u', "input_file", Required = true, HelpText = "The video file you want modified")]
@@ -48,18 +48,18 @@ namespace Jumpcutter_dot_net
 
 
 
-        internal int orignial_length;
-        internal int frame_count;
-        internal Size frame_size;
+        public int orignial_length;
+        public int frame_count;
+        public Size frame_size;
 
         //VideoWriter.Fourcc('m', 'p', '4', 'v');
        
-        internal string temp_dir;
+        public string temp_dir;
 
 
         //smooth out transitiion's audio by quickly fading in/out (arbitrary magic number whatever)
-        internal const int AUDIO_FADE_ENVELOPE_SIZE = 400;
-        internal const int VIDEO_CODEC = 1983148141;
+        public const int AUDIO_FADE_ENVELOPE_SIZE = 400;
+        public const int VIDEO_CODEC = 1983148141;
         //internal const int SAMPLE_RATE = 44100;
 
 

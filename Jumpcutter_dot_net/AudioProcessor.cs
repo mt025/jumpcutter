@@ -20,6 +20,7 @@ namespace Jumpcutter_dot_net
         private int samplesPerFrame;
         private float maxVolume;
 
+        private List<int> videoFramesToRender = new List<int>();
 
         const string READ_VOLUME_MESSAGE = "\tReading frame volume {0} out of {1} {2}";
         const string WRITE_AUDIO_MESSAGE = "\tWriting new audio ({0} mode)  {1} out of {2} {3}";
@@ -64,11 +65,8 @@ namespace Jumpcutter_dot_net
         }
 
 
-        internal List<int> processAudio()
+        internal List<int> writeAudio()
         {
-
-            List<int> videoFramesToRender = new List<int>();
-
             var chunks = buildChunks();
 
             using (var audioFileWriter = new WaveFileWriter(options.temp_dir + @"\finalAudio.wav", audioFileReader.WaveFormat))
@@ -79,7 +77,7 @@ namespace Jumpcutter_dot_net
                 {
                     var chunkSpeed = chunk.getSpeed(options);
                     normalSpeed = chunkSpeed == 1;
-                    var totalSamplesRead = (normalSpeed ? standardAudio(chunk, audioFileReader, audioFileWriter) : vocodeAudio(chunk, audioFileReader, audioFileWriter));
+                    var totalSamplesRead = vocodeAudio(chunk, audioFileReader, audioFileWriter);
                     //Build render list
                     var frameCount = (chunk.endFrame - chunk.startFrame);
                     //Count frames to render
@@ -110,7 +108,7 @@ namespace Jumpcutter_dot_net
 
             audioFileReader.Dispose();
 
-            return new List<int>(videoFramesToRender);
+            return videoFramesToRender;
         }
 
         private List<Chunk> buildChunks()
@@ -176,11 +174,6 @@ namespace Jumpcutter_dot_net
                     }
 
                 }
-                else {
-                    //Write the last buffer to file
-
-                }
-
 
                 lastLoudFrame = loudFrame;
                 currentFrame++;
@@ -224,17 +217,25 @@ namespace Jumpcutter_dot_net
         private int vocodeAudio(Chunk chunk, AudioFileReader audioFileReader, WaveFileWriter audioFileWriter)
         {
             ///TODO Create the soundtouch outside this loop, and just reset it!!!!!!
+            SoundTouch.SoundTouch<float, double> soundTouch = null;
+            var speed = (chunk.getSpeed(options) - 1) * 100;
+            var normalSpeed = speed == 0;
+            var samplesLeft = false;
 
-            //Init soundtouch
-            SoundTouch.SoundTouch<float, double> soundTouch = new SoundTouch.SoundTouch<float, double>();
+            if (!normalSpeed)
+            {
+                //Init soundtouch
+                soundTouch = new SoundTouch.SoundTouch<float, double>();
 
-            soundTouch.SetRate(1.0f);
-            soundTouch.SetPitchOctaves(0f);
-            soundTouch.SetTempo(0);
+                soundTouch.SetRate(1.0f);
+                soundTouch.SetPitchOctaves(0f);
+                soundTouch.SetTempo(0);
 
-            soundTouch.SetTempoChange((chunk.getSpeed(options) - 1) * 100);
-            soundTouch.SetSampleRate((int)(audioFileReader.WaveFormat.SampleRate));
-            soundTouch.SetChannels(audioFileReader.WaveFormat.Channels);
+                soundTouch.SetTempoChange(speed);
+                soundTouch.SetSampleRate((int)(audioFileReader.WaveFormat.SampleRate));
+                soundTouch.SetChannels(audioFileReader.WaveFormat.Channels);
+
+            }
 
             //Sample count of chunk
             var chunkSamplesLength = ((chunk.endFrame * samplesPerFrame) - (chunk.startFrame * samplesPerFrame));
@@ -255,11 +256,11 @@ namespace Jumpcutter_dot_net
             var readAll = false;
             var nSamples = 0;
 
-            while (!readAll || soundTouch.AvailableSamples > 0)
+            while (!readAll || samplesLeft)
             {
                 if (!readAll)
                 {
-                    utils.reportStatus(WRITE_AUDIO_MESSAGE, chunk.startFrame + (totalSamplesRead / samplesPerFrame), options.frame_count, 2, "VOC");
+                    utils.reportStatus(WRITE_AUDIO_MESSAGE, chunk.startFrame + (totalSamplesRead / samplesPerFrame), options.frame_count, 2, soundTouch == null ? "STD":"VOC");
 
                     //Shorten buffer if needed
                     if (bufferSize > chunkSamplesLength - totalSamplesRead)
@@ -276,81 +277,43 @@ namespace Jumpcutter_dot_net
                     {
                         //Stop reading more and flush the soundtouch buffer
                         readAll = true;
-                        soundTouch.Flush();
+                        if (!normalSpeed) soundTouch.Flush();
                     }
                     else
                     {
-                        //Read the next block and and input them into soundtouch
-                        nSamples = samplesRead / audioFileReader.WaveFormat.Channels;
-                        soundTouch.PutSamples(inputBuffer, nSamples);
+                        if (soundTouch != null)
+                        {
+                            //Read the next block and and input them into soundtouch
+                            nSamples = samplesRead / audioFileReader.WaveFormat.Channels;
+                            soundTouch.PutSamples(inputBuffer, nSamples);
+                        }
                     }
                 }
 
                 do
                 {
-                    //Get samples from soundtouch
-                    nSamples = soundTouch.ReceiveSamples(outputBuffer, outputBuffer.Length / audioFileReader.WaveFormat.Channels);
+                    if (soundTouch != null)
+                    {
+                        //Get samples from soundtouch
+                        nSamples = soundTouch.ReceiveSamples(outputBuffer, outputBuffer.Length / audioFileReader.WaveFormat.Channels);
 
-                    //Write samples to file
-                    audioFileWriter.WriteSamples(outputBuffer, 0, nSamples * audioFileReader.WaveFormat.Channels);
+                        //Write samples to file
+                        audioFileWriter.WriteSamples(outputBuffer, 0, nSamples * audioFileReader.WaveFormat.Channels);
+                    }
+                    else
+                    {
+                        audioFileWriter.WriteSamples(inputBuffer, 0, bufferSize);
+                        nSamples = 0;
+                    }
 
                 } while (nSamples != 0);
 
 
                 totalSamplesRead += samplesRead;
-
+                samplesLeft = soundTouch?.AvailableSamples > 0;
             }
 
-
-            soundTouch.Clear();
-            return totalSamplesRead;
-        }
-
-
-        private int standardAudio(Chunk chunk, AudioFileReader audioFileReader, WaveFileWriter audioFileWriter)
-        {
-            //Sample count of chunk
-            var chunkSamplesLength = ((chunk.endFrame * samplesPerFrame) - (chunk.startFrame * samplesPerFrame));
-
-            int totalSamplesRead = 0;
-
-            //Set buffer size to 6750 or chunkSamplesLength if its less
-            int bufferSize = chunkSamplesLength < 6750 ? chunkSamplesLength : 6750;
-
-            //Init buffers
-            float[] inputBuffer = new float[bufferSize];
-            float[] outputBuffer = new float[bufferSize];
-            var readAll = false;
-
-            while (!readAll)
-            {
-
-                utils.reportStatus(WRITE_AUDIO_MESSAGE, chunk.startFrame + (totalSamplesRead / samplesPerFrame), options.frame_count, 2, "STD");
-
-
-                //Shorten buffer if needed
-                if (bufferSize > chunkSamplesLength - totalSamplesRead)
-                {
-                    bufferSize = chunkSamplesLength - totalSamplesRead;
-                }
-
-                //Read next block of samples
-                int samplesRead = audioFileReader.Read(inputBuffer, 0, bufferSize);
-                totalSamplesRead += samplesRead;
-                //End of stream or chunk finished
-                if (samplesRead == 0 || totalSamplesRead >= chunkSamplesLength)
-                {
-                    //Stop reading more and flush the soundtouch buffer
-                    readAll = true;
-                }
-                else
-                {
-                    //Read the next block and and input them into soundtouch
-                }
-                audioFileWriter.WriteSamples(inputBuffer, 0, bufferSize);
-
-
-            }
+            soundTouch?.Clear();
 
             return totalSamplesRead;
         }
