@@ -8,9 +8,9 @@ namespace jumpcutter_dot_net_commandline
 {
     class Program
     {
-        static void Main(string[] args)
+        static int Main(string[] args)
         {
-
+            var withError = false;
             Console.WriteLine();
 
             Options options = new Options();
@@ -18,16 +18,21 @@ namespace jumpcutter_dot_net_commandline
 
             if (ops.Tag == ParserResultType.Parsed)
             {
-
+                var jc = new JumpCutter(options);
                 try
                 {
+
                     try
                     {
-                        var jc = new JumpCutter(options);
                         jc.Process();
+                    }
+                    catch(FileLoadException e)
+                    {
+                        Console.Error.WriteLine(e);
                     }
                     catch (Exception e)
                     {
+                        jc.lockfile?.Delete();
                         throw new JCException("\tUncaught Exception", e);
                     }
 
@@ -45,6 +50,8 @@ namespace jumpcutter_dot_net_commandline
                         Console.Error.WriteLine(tabs + "Inner Error: " + ie.Message);
                         ie = ie.InnerException;
                     }
+                    withError = true;
+                    jc.lockfile?.Delete();
 
                 }
                 finally
@@ -58,7 +65,7 @@ namespace jumpcutter_dot_net_commandline
                                 tempdir.Delete(true);
                         }
                     }
-                    catch (Exception e)
+                    catch (Exception)
                     {
                         Console.Error.WriteLine("Failed to cleanup temp dir " + options.temp_dir);
                     }
@@ -67,6 +74,7 @@ namespace jumpcutter_dot_net_commandline
 
             }
             //Console.ReadKey();
+            return withError ? -1 : 0;
         }
 
 

@@ -11,7 +11,7 @@ namespace Jumpcutter_dot_net
     public class Options
     {
         //[Option('u', "input_file", Required = true, HelpText = "The video file or youtube URL you want modified")]
-        [Option('u', "input_file", Required = true, HelpText = "The video file you want modified")]
+        [Option('i', "input_file", Required = true, HelpText = "The video file you want modified")]
         public string input_file { get; set; }
 
 
@@ -42,8 +42,20 @@ namespace Jumpcutter_dot_net
         [Option(Required = false, Default = 75, HelpText = "Quality of frames to be extracted from input video.")]
         public int frame_quality { get; set; }
 
+
+        //Additonal inputs
+
         [Option(Required = false, Default = true, HelpText = "Download FFmpeg before starting (If set to false place FFMpeg.exe and FFProbe.exe in bin dir)")]
         public bool download_ffmpeg { get; set; }
+
+
+        [Option(Required = false, Default = true, HelpText = "Delete the input file after sucessful process")]
+        public bool keep_orignal { get; set; }
+
+
+        [Option(Required = false, Default = false, HelpText = "Overwrite the output file if its already exsits")]
+        public bool overwrite_output { get; set; }
+
 
 
 
@@ -51,14 +63,12 @@ namespace Jumpcutter_dot_net
         public int orignial_length;
         public int frame_count;
         public Size frame_size;
-
-        //VideoWriter.Fourcc('m', 'p', '4', 'v');
-       
         public string temp_dir;
-
+        public string temp_audio;
 
         //smooth out transitiion's audio by quickly fading in/out (arbitrary magic number whatever)
         public const int AUDIO_FADE_ENVELOPE_SIZE = 400;
+        //VideoWriter.Fourcc('m', 'p', '4', 'v');
         public const int VIDEO_CODEC = 1983148141;
         //internal const int SAMPLE_RATE = 44100;
 

@@ -11,16 +11,15 @@ namespace Jumpcutter_dot_net
 {
     internal class AudioProcessor
     {
-        private Options options;
-        private Utils utils;
-        private string tempAudio;
+        private readonly Options options;
+        private readonly Utils utils;
 
         private AudioFileReader audioFileReader;
         private int sampleRate;
         private int samplesPerFrame;
         private float maxVolume;
 
-        private List<int> videoFramesToRender = new List<int>();
+        private readonly List<int> videoFramesToRender = new List<int>();
 
         const string READ_VOLUME_MESSAGE = "\tReading frame volume {0} out of {1} {2}";
         const string WRITE_AUDIO_MESSAGE = "\tWriting new audio ({0} mode)  {1} out of {2} {3}";
@@ -30,19 +29,19 @@ namespace Jumpcutter_dot_net
         {
             this.options = options;
             this.utils = new Utils();
-            tempAudio = options.temp_dir + @"\" + "fullaudio.wav";
+            options.temp_audio = options.temp_dir + @"\" + "fullaudio.wav";
         }
 
-        internal void prepareAudio()
+        internal void PrepareAudio()
         {
 
             ///TODO write progress
             //Get the audio file from the video
             /////DEBUG 
             ///
-            if (!File.Exists(tempAudio))
+            if (!File.Exists(options.temp_audio))
             {
-                var conv = Conversion.ExtractAudio(options.input_file, tempAudio);
+                var conv = Conversion.ExtractAudio(options.input_file, options.temp_audio);
                 conv.Start().Wait();
             }
             else
@@ -50,7 +49,7 @@ namespace Jumpcutter_dot_net
                 //Console.WriteLine("DEBUG.... SKIPPING CONVERSION!!!");
             }
 
-            audioFileReader = new AudioFileReader(tempAudio);
+            audioFileReader = new AudioFileReader(options.temp_audio);
 
 
             //Sample rate of the audio file
@@ -65,9 +64,11 @@ namespace Jumpcutter_dot_net
         }
 
 
-        internal List<int> writeAudio()
+        internal List<int> WriteAudio()
         {
-            var chunks = buildChunks();
+
+
+            var chunks = BuildChunks();
 
             using (var audioFileWriter = new WaveFileWriter(options.temp_dir + @"\finalAudio.wav", audioFileReader.WaveFormat))
             {
@@ -75,9 +76,9 @@ namespace Jumpcutter_dot_net
                 var normalSpeed = true;
                 foreach (var chunk in chunks)
                 {
-                    var chunkSpeed = chunk.getSpeed(options);
+                    var chunkSpeed = chunk.GetSpeed(options);
                     normalSpeed = chunkSpeed == 1;
-                    var totalSamplesRead = vocodeAudio(chunk, audioFileReader, audioFileWriter);
+                    var totalSamplesRead = VocodeAudio(chunk, audioFileReader, audioFileWriter);
                     //Build render list
                     var frameCount = (chunk.endFrame - chunk.startFrame);
                     //Count frames to render
@@ -103,7 +104,7 @@ namespace Jumpcutter_dot_net
 
                     }
                 }
-                utils.reportStatus(WRITE_AUDIO_MESSAGE, options.frame_count, options.frame_count, 2, normalSpeed ? "STD" : "VOC", true);
+                utils.ReportStatus(WRITE_AUDIO_MESSAGE, options.frame_count, options.frame_count, 2, normalSpeed ? "STD" : "VOC", true);
             }
 
             audioFileReader.Dispose();
@@ -111,7 +112,7 @@ namespace Jumpcutter_dot_net
             return videoFramesToRender;
         }
 
-        private List<Chunk> buildChunks()
+        private List<Chunk> BuildChunks()
         {
 
             var chunks = new List<Chunk>();
@@ -126,13 +127,13 @@ namespace Jumpcutter_dot_net
             while ((samplesRead = audioFileReader.Read(sampleBuffer, 0, bufferCount)) > 0)
             {
                 //Report output
-                utils.reportStatus(READ_VOLUME_MESSAGE, currentFrame, options.frame_count, 0);
+                utils.ReportStatus(READ_VOLUME_MESSAGE, currentFrame, options.frame_count, 0);
 
                 //If its not the whole buffer returned, take the remaining amount
                 if (samplesRead != bufferCount) sampleBuffer = sampleBuffer.Take(samplesRead).ToArray();
 
                 //Get max volume of current frame
-                var currentMax = getMaxVolume(sampleBuffer);
+                var currentMax = GetMaxVolume(sampleBuffer);
 
                 //If the current frame is less than the max volume for the whole track, increase it
                 if (maxVolume < currentMax) maxVolume = currentMax;
@@ -188,9 +189,9 @@ namespace Jumpcutter_dot_net
                 chunks.Add(new Chunk(chunks.Last().endFrame, options.frame_count, (bool)lastLoudFrame));
             }
 
-            utils.reportStatus(READ_VOLUME_MESSAGE, options.frame_count, options.frame_count, last: true);
+            utils.ReportStatus(READ_VOLUME_MESSAGE, options.frame_count, options.frame_count, last: true);
             Console.WriteLine("\tMax Audio Volume is " + maxVolume + "/1");
-            calculateTimeReduction(chunks);
+            CalculateTimeReduction(chunks);
 
             //Reset the stream 
             audioFileReader.Position = 0;
@@ -198,14 +199,14 @@ namespace Jumpcutter_dot_net
             return chunks;
         }
 
-        private void calculateTimeReduction(List<Chunk> chunks)
+        private void CalculateTimeReduction(List<Chunk> chunks)
         {
             double totalDuration = 0;
             //Caulucate duration difference 
             foreach (var chunk in chunks)
             {
                 var chunkLength = chunk.endFrame - chunk.startFrame;
-                var playbackRate = chunk.getSpeed(options);
+                var playbackRate = chunk.GetSpeed(options);
                 var duration = chunkLength / playbackRate;
                 totalDuration += duration;
             }
@@ -214,11 +215,11 @@ namespace Jumpcutter_dot_net
             Console.WriteLine("\tNew video length will have a " + durationChange + "% reduction (" + options.frame_count + "s to " + (int)totalDuration + "s)");
         }
 
-        private int vocodeAudio(Chunk chunk, AudioFileReader audioFileReader, WaveFileWriter audioFileWriter)
+        private int VocodeAudio(Chunk chunk, AudioFileReader audioFileReader, WaveFileWriter audioFileWriter)
         {
             ///TODO Create the soundtouch outside this loop, and just reset it!!!!!!
             SoundTouch.SoundTouch<float, double> soundTouch = null;
-            var speed = (chunk.getSpeed(options) - 1) * 100;
+            var speed = (chunk.GetSpeed(options) - 1) * 100;
             var normalSpeed = speed == 0;
             var samplesLeft = false;
 
@@ -254,13 +255,13 @@ namespace Jumpcutter_dot_net
 
 
             var readAll = false;
-            var nSamples = 0;
+            int nSamples;
 
             while (!readAll || samplesLeft)
             {
                 if (!readAll)
                 {
-                    utils.reportStatus(WRITE_AUDIO_MESSAGE, chunk.startFrame + (totalSamplesRead / samplesPerFrame), options.frame_count, 2, soundTouch == null ? "STD":"VOC");
+                    utils.ReportStatus(WRITE_AUDIO_MESSAGE, chunk.startFrame + (totalSamplesRead / samplesPerFrame), options.frame_count, 2, soundTouch == null ? "STD":"VOC");
 
                     //Shorten buffer if needed
                     if (bufferSize > chunkSamplesLength - totalSamplesRead)
@@ -318,8 +319,8 @@ namespace Jumpcutter_dot_net
             return totalSamplesRead;
         }
 
-
-        private void trimExtraAudio(List<bool> hasLoudAudioPerFrame)
+        //Required?
+        private void TrimExtraAudio(List<bool> hasLoudAudioPerFrame)
         {
             var audioLengthDifference = hasLoudAudioPerFrame.Count - options.frame_count;
 
@@ -336,7 +337,7 @@ namespace Jumpcutter_dot_net
             }
         }
 
-        private float getMaxVolume(float[] s)
+        private float GetMaxVolume(float[] s)
         {
             var maxv = s.Max();
             var minv = -s.Min();

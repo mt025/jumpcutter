@@ -10,10 +10,13 @@ namespace Jumpcutter_dot_net
 {
     public class JumpCutter
     {
-        private readonly Options options;
+        public readonly Options options;
 
         private AudioProcessor audioProcessor;
         private VideoProcessor videoProcessor;
+
+        FileInfo videoInputFile;
+        public FileInfo lockfile;
 
 
         public JumpCutter(Options options,TextWriter tw = null)
@@ -31,9 +34,8 @@ namespace Jumpcutter_dot_net
         public void Process()
         {
 
-
             //Check the input file and output file
-            handleInputOutputTempFiles();
+            HandleInputOutputTempFiles();
 
             //Init the audio processor
             audioProcessor = new AudioProcessor(options);
@@ -43,41 +45,81 @@ namespace Jumpcutter_dot_net
 
             //Download FFMPeg
             Console.WriteLine("Getting Latest FFmpeg...");
-            videoProcessor.downloadFFMpeg();
+            videoProcessor.DownloadFFMpeg();
             Console.WriteLine();
 
             //Get the video data
             Console.WriteLine("Getting Video Data... ");
-            videoProcessor.getVideoFrameData();
+            videoProcessor.GetVideoFrameData();
             Console.WriteLine();
 
             //Prepare the audio
             Console.WriteLine("Extracting Audio...");
-            audioProcessor.prepareAudio();
+            audioProcessor.PrepareAudio();
             Console.WriteLine();
 
             //Process the audio
             Console.WriteLine("Processing Audio...");
-            var framesToRender = audioProcessor.writeAudio();
+            var framesToRender = audioProcessor.WriteAudio();
             Console.WriteLine();
 
             //Process the video
             Console.WriteLine("Processing video...");
-            videoProcessor.writeFinalVideo(framesToRender, "");
+            videoProcessor.WriteFinalVideo(framesToRender, "");
             Console.WriteLine();
 
             //Join video and audio
             Console.WriteLine("Joining video and audio...");
-            videoProcessor.addAudioToVideo();
+            videoProcessor.AddAudioToVideo();
+            Console.WriteLine();
+
+
+            //Join video and audio
+            if (!options.keep_orignal)
+            {
+                Console.WriteLine("Deleting orignal video...");
+                videoInputFile.Delete();
+                Console.WriteLine();
+            }
+
+            lockfile.Delete();
+
+        }
+
+        public void WPFStage1()
+        {
+
+            //Check the input file and output file
+            HandleInputOutputTempFiles();
+
+            //Init the audio processor
+            audioProcessor = new AudioProcessor(options);
+
+            //Init the video prosessor
+            videoProcessor = new VideoProcessor(options);
+
+            //Download FFMPeg
+            Console.WriteLine("Getting Latest FFmpeg...");
+            videoProcessor.DownloadFFMpeg();
+            Console.WriteLine();
+
+            //Get the video data
+            Console.WriteLine("Getting Video Data... ");
+            videoProcessor.GetVideoFrameData();
+            Console.WriteLine();
+
+            //Prepare the audio
+            Console.WriteLine("Extracting Audio...");
+            audioProcessor.PrepareAudio();
             Console.WriteLine();
         }
 
 
 
-        private void handleInputOutputTempFiles()
+        private void HandleInputOutputTempFiles()
         {
-            FileInfo videoInputFile;
             FileInfo videoOutputFile;
+
 
             //Does the extention end .mp4, if so we will assume the file is a mp4 file
             if (!options.input_file.EndsWith(".mp4", true, CultureInfo.CurrentCulture))
@@ -89,6 +131,18 @@ namespace Jumpcutter_dot_net
             videoInputFile = new FileInfo(options.input_file);
             //Does it exist?
             if (!videoInputFile.Exists) throw new JCException("File " + options.input_file + " doesn't exist");
+
+            lockfile = new FileInfo(videoInputFile.Directory + @"\" + videoInputFile.Name + ".lock");
+            if (lockfile.Exists)
+            {
+                //We are already processing this file
+                throw new FileLoadException("File is locked for processing by " + lockfile.Name);
+            }
+            else
+            {
+                lockfile.Create();
+            }
+
 
             //Setup output file
             if (options.output_file != null)
@@ -105,11 +159,16 @@ namespace Jumpcutter_dot_net
                 options.output_file = videoOutputFile.FullName;
             }
 
+
+            
+
+
+
             //If the output file already exists, delete it, if debug mode
             if (videoOutputFile.Exists)
             {
                 ///TODO Add param for overrite file
-                if (true)
+                if (options.overwrite_output)
                 {
                     videoOutputFile.Delete();
                 }

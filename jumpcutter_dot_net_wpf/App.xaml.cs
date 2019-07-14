@@ -13,5 +13,7 @@ namespace jumpcutter_dot_net_wpf
     /// </summary>
     public partial class App : Application
     {
+
+
     }
 }

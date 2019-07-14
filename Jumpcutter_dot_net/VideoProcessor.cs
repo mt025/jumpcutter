@@ -8,12 +8,12 @@ namespace Jumpcutter_dot_net
 {
     internal class VideoProcessor
     {
-        private Options options;
-        private Utils utils;
+        private readonly Options options;
+        private readonly Utils utils;
 
-        private VideoCapture inputVideo;
+        private readonly VideoCapture inputVideo;
         private VideoWriter outputVideo;
-        private string tempVideo;
+        private readonly string tempVideo;
 
 
         public VideoProcessor(Options options)
@@ -26,7 +26,7 @@ namespace Jumpcutter_dot_net
 
         }
 
-        internal void getVideoFrameData()
+        internal void GetVideoFrameData()
         {
             if (options.frame_rate == null)
             {
@@ -56,7 +56,7 @@ namespace Jumpcutter_dot_net
 
         }
 
-        internal void downloadFFMpeg()
+        internal void DownloadFFMpeg()
         {
             if (options.download_ffmpeg == true)
             {
@@ -91,7 +91,7 @@ namespace Jumpcutter_dot_net
             }
         }
 
-        internal void writeFinalVideo(List<int> framesToRender, string audioFile)
+        internal void WriteFinalVideo(List<int> framesToRender, string audioFile)
         {
 
             using (outputVideo = new VideoWriter(tempVideo, Options.VIDEO_CODEC, (double)options.frame_rate, options.frame_size, true))
@@ -107,7 +107,7 @@ namespace Jumpcutter_dot_net
                 {
                     var adjframe = frame + 1;
 
-                    utils.reportStatus("Writing frame {0} out of {1} {2}", count, framesToRender.Count, 2);
+                    utils.ReportStatus("Writing frame {0} out of {1} {2}", count, framesToRender.Count, 2);
                     count++;
                     if (adjframe != lastFrame)
                     {
@@ -132,11 +132,11 @@ namespace Jumpcutter_dot_net
                     lastFrame = adjframe;
 
                 }
-                utils.reportStatus("Writing frame {0} out of {1} {2}", options.frame_count, options.frame_count, 2,last: true);
+                utils.ReportStatus("Writing frame {0} out of {1} {2}", options.frame_count, options.frame_count, 2,last: true);
             }
         }
 
-        internal void addAudioToVideo()
+        internal void AddAudioToVideo()
         {
             ///TODO write progress
             ///TODO move this away from FFMpeg to native
@@ -151,7 +151,7 @@ namespace Jumpcutter_dot_net
 
 
         //This function is slower than streaming the whole file and dropping un-needed frames
-        internal Mat getFrameAt(int frameNumber)
+        internal Mat GetFrameAt(int frameNumber)
         {
 
             inputVideo.SetCaptureProperty(Emgu.CV.CvEnum.CapProp.PosFrames, frameNumber);

@@ -9,7 +9,7 @@ namespace Jumpcutter_dot_net
     internal class Utils
     {
 
-        internal void reportStatus(string message, int current, int total, int decimalPresision = 1, string additonal = null, bool last = false)
+        internal void ReportStatus(string message, int current, int total, int decimalPresision = 1, string additonal = null, bool last = false)
         {
 
             var rate = 100 + (decimalPresision * 1000);
@@ -55,7 +55,7 @@ namespace Jumpcutter_dot_net
         public int endFrame;
         public bool hasLoudAudio;
 
-        internal double getSpeed(Options options) => (hasLoudAudio ? options.sounded_speed : options.silent_speed);
+        internal double GetSpeed(Options options) => (hasLoudAudio ? options.sounded_speed : options.silent_speed);
 
         public Chunk(int startFrame, int endFrame, bool hasLoudAudio)
         {
