@@ -19,6 +19,7 @@ namespace jumpcutter_dot_net_commandline
             if (ops.Tag == ParserResultType.Parsed)
             {
                 var jc = new JumpCutter(options);
+                var lockFileError = false;
                 try
                 {
 
@@ -28,11 +29,11 @@ namespace jumpcutter_dot_net_commandline
                     }
                     catch(FileLoadException e)
                     {
+                        lockFileError = true;
                         Console.Error.WriteLine(e);
                     }
                     catch (Exception e)
                     {
-                        jc.lockfile?.Delete();
                         throw new JCException("\tUncaught Exception", e);
                     }
 
@@ -51,7 +52,6 @@ namespace jumpcutter_dot_net_commandline
                         ie = ie.InnerException;
                     }
                     withError = true;
-                    jc.lockfile?.Delete();
 
                 }
                 finally
@@ -63,6 +63,10 @@ namespace jumpcutter_dot_net_commandline
                             var tempdir = new DirectoryInfo(options.temp_dir);
                             if (tempdir.Exists)
                                 tempdir.Delete(true);
+                        }
+                        if (!lockFileError)
+                        {
+                            jc.lockfile?.Delete();
                         }
                     }
                     catch (Exception)

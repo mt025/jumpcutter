@@ -23,7 +23,7 @@ namespace jumpcutter_dot_net_wpf2
 
 
     /// <summary>
-    /// Class that opens & plays MP3 file and allows real-time audio processing with SoundTouch
+    /// Class that opens & plays Wav file and allows real-time audio processing with SoundTouch
     /// while playing
     /// </summary>
     public class SoundProcessor

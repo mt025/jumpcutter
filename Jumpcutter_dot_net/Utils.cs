@@ -22,7 +22,10 @@ namespace Jumpcutter_dot_net
                 if (string.IsNullOrEmpty(additonal))
                 {
                     Console.Write(last ? "" : "\r"
-                        + string.Format(message, current, total, "(" + pc.ToString("0." + String.Concat(Enumerable.Repeat("0", decimalPresision)) + "%)")));
+                        + string.Format(message, current, total, "(" 
+                        + pc.ToString("0."
+                        + String.Concat(Enumerable.Repeat("0", decimalPresision)) 
+                        + "%)")));
                 }
                 else
                 {

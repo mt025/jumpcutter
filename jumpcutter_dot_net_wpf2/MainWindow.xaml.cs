@@ -33,7 +33,7 @@ namespace jumpcutter_dot_net_wpf2
 
         public MainWindow()
         {
-            NativeMethods.AllocConsole();
+            //NativeMethods.AllocConsole();
             InitializeComponent();
 
             StatusMessage.StatusEvent += StatusEventHandler;
@@ -53,7 +53,9 @@ namespace jumpcutter_dot_net_wpf2
             Stop();
 
             Options options = new Options();
-            var ops = Parser.Default.ParseArguments<Options>(new string[] { "--input_file", fileName }).WithParsed(x => options = x);
+            var cmdLineOpts = new string[] { "--input_file", fileName };
+            var ops = Parser.Default.ParseArguments<Options>(cmdLineOpts);
+                ops.WithParsed(x => options = x);
 
             var jc = new JumpCutter(options);
             //jumpcutter = new Thread(delegate ()

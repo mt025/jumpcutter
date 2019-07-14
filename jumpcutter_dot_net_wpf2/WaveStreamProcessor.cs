@@ -22,7 +22,7 @@ using System;
 namespace jumpcutter_dot_net_wpf2
 {
     /// <summary>
-    /// NAudui WaveStream class for processing audio stream with SoundTouch effects
+    /// NAuduo WaveStream class for processing audio stream with SoundTouch effects
     /// </summary>
     public class WaveStreamProcessor : WaveStream
     {
@@ -32,7 +32,7 @@ namespace jumpcutter_dot_net_wpf2
         private readonly byte[] bytebuffer = new byte[4096];
         private float[] floatbuffer = new float[1024];
 
-
+        
         /// <summary>
         /// Constructor
         /// </summary>

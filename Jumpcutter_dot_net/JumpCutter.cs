@@ -133,7 +133,7 @@ namespace Jumpcutter_dot_net
             if (!videoInputFile.Exists) throw new JCException("File " + options.input_file + " doesn't exist");
 
             lockfile = new FileInfo(videoInputFile.Directory + @"\" + videoInputFile.Name + ".lock");
-            if (lockfile.Exists)
+            if (lockfile.Exists && lockfile.Name != "jctestfilejc.mp4.lock")
             {
                 //We are already processing this file
                 throw new FileLoadException("File is locked for processing by " + lockfile.Name);
