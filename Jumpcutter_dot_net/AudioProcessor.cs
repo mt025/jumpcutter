@@ -232,8 +232,6 @@ namespace Jumpcutter_dot_net
             soundTouch.SetChannels(audioFileReader.WaveFormat.Channels);
 
 
-
-
             soundTouch.SetTempoChange(speed);
 
             //Sample count of chunk
@@ -243,10 +241,7 @@ namespace Jumpcutter_dot_net
             int totalSamplesRead = 0;
 
             //Set buffer size to 6750 or chunkSamplesLength if its less
-            int bufferSize = chunkSamplesLength < 6750 ? chunkSamplesLength : 6750;
-
-            var rem = bufferSize % 4;
-            bufferSize = rem == 0 ? bufferSize : bufferSize - rem;
+            int bufferSize = reAlignBuffer(chunkSamplesLength < 6750 ? chunkSamplesLength : 6750,audioFileReader.WaveFormat.BlockAlign);
 
 
             //Init buffers
