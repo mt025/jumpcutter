@@ -14,6 +14,7 @@ namespace Jumpcutter_dot_net
         [Option('i', "input_file", Required = true, HelpText = "The video file you want modified")]
         public string input_file { get; set; }
 
+        internal int samplesPerFrame;
 
         [Option(Required = false, HelpText = "The output file. (If not included,it'll just modify the input file name)")]
         public string output_file { get; set; }

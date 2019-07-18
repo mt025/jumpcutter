@@ -18,7 +18,7 @@ namespace jumpcutter_dot_net_commandline
 
             if (ops.Tag == ParserResultType.Parsed)
             {
-                var jc = new JumpCutter(options);
+                var jc = new JumpCutter(ref options);
                 var lockFileError = false;
                 try
                 {

@@ -10,16 +10,16 @@ namespace Jumpcutter_dot_net
 {
     public class JumpCutter
     {
-        public readonly Options options;
+        public Options options;
 
-        private AudioProcessor audioProcessor;
-        private VideoProcessor videoProcessor;
+        public AudioProcessor2 audioProcessor;
+        public VideoProcessor videoProcessor;
 
         FileInfo videoInputFile;
         public FileInfo lockfile;
 
 
-        public JumpCutter(Options options,TextWriter tw = null)
+        public JumpCutter(ref Options options,TextWriter tw = null)
         {
             if(tw != null)
             {
@@ -38,10 +38,10 @@ namespace Jumpcutter_dot_net
             HandleInputOutputTempFiles();
 
             //Init the audio processor
-            audioProcessor = new AudioProcessor(options);
+            audioProcessor = new AudioProcessor2(ref options);
 
             //Init the video prosessor
-            videoProcessor = new VideoProcessor(options);
+            videoProcessor = new VideoProcessor(ref options);
 
             //Download FFMPeg
             Console.WriteLine("Getting Latest FFmpeg...");
@@ -60,17 +60,18 @@ namespace Jumpcutter_dot_net
 
             //Process the audio
             Console.WriteLine("Processing Audio...");
-            var framesToRender = audioProcessor.WriteAudio();
+            //var framesToRender = audioProcessor.WriteAudio();
+            audioProcessor.Stream();
             Console.WriteLine();
 
             //Process the video
             Console.WriteLine("Processing video...");
-            videoProcessor.WriteFinalVideo(framesToRender, "");
+            //videoProcessor.WriteFinalVideo(framesToRender, "");
             Console.WriteLine();
 
             //Join video and audio
             Console.WriteLine("Joining video and audio...");
-            videoProcessor.AddAudioToVideo();
+           // videoProcessor.AddAudioToVideo();
             Console.WriteLine();
 
 
@@ -78,25 +79,37 @@ namespace Jumpcutter_dot_net
             if (!options.keep_orignal)
             {
                 Console.WriteLine("Deleting orignal video...");
-                videoInputFile.Delete();
+             //   videoInputFile.Delete();
                 Console.WriteLine();
             }
 
-            lockfile.Delete();
+            //lockfile.Delete();
 
         }
 
-        public void WPFStage1()
+        public void WPFStageAudio()
         {
 
             //Check the input file and output file
             HandleInputOutputTempFiles();
 
             //Init the audio processor
-            audioProcessor = new AudioProcessor(options);
+            audioProcessor = new AudioProcessor2(ref options);
 
+          
+
+            //Prepare the audio
+            Console.WriteLine("Extracting Audio...");
+            audioProcessor.PrepareAudio();
+            Console.WriteLine();
+
+
+        }
+
+        public void WPFStageVideo()
+        {
             //Init the video prosessor
-            videoProcessor = new VideoProcessor(options);
+            videoProcessor = new VideoProcessor(ref options);
 
             //Download FFMPeg
             Console.WriteLine("Getting Latest FFmpeg...");
@@ -106,11 +119,6 @@ namespace Jumpcutter_dot_net
             //Get the video data
             Console.WriteLine("Getting Video Data... ");
             videoProcessor.GetVideoFrameData();
-            Console.WriteLine();
-
-            //Prepare the audio
-            Console.WriteLine("Extracting Audio...");
-            audioProcessor.PrepareAudio();
             Console.WriteLine();
         }
 

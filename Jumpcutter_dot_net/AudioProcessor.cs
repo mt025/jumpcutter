@@ -11,12 +11,11 @@ namespace Jumpcutter_dot_net
 {
     internal class AudioProcessor
     {
-        private readonly Options options;
+        private Options options;
         private readonly Utils utils;
 
         private AudioFileReader audioFileReader;
         private int sampleRate;
-        private int samplesPerFrame;
         private float maxVolume;
 
         private readonly List<int> videoFramesToRender = new List<int>();
@@ -27,7 +26,7 @@ namespace Jumpcutter_dot_net
         public SoundTouch.SoundTouch<float, double> soundTouch;
 
 
-        public AudioProcessor(Options options)
+        public AudioProcessor(ref Options options)
         {
             this.options = options;
             this.utils = new Utils();
@@ -59,7 +58,7 @@ namespace Jumpcutter_dot_net
             sampleRate = audioFileReader.WaveFormat.SampleRate;
 
             //Samples of audio per frame
-            samplesPerFrame = (int)((sampleRate * audioFileReader.WaveFormat.Channels) / (double)options.frame_rate);
+            options.samplesPerFrame = (int)((sampleRate * audioFileReader.WaveFormat.Channels) / (double)options.frame_rate);
 
 
             //var samplePerFrameBuffer = samplesPerFrame - (samplesPerFrame % 4);
@@ -76,7 +75,7 @@ namespace Jumpcutter_dot_net
                 var excess = 0.0;
                 foreach (var chunk in chunks)
                 {
-                    var chunkSpeed = chunk.GetSpeed(options);
+                    var chunkSpeed = chunk.GetSpeed(ref options);
                     var totalSamplesRead = VocodeAudioChunk(chunk, audioFileReader, audioFileWriter);
                     //Build render list
                     var frameCount = (chunk.endFrame - chunk.startFrame);
@@ -116,7 +115,7 @@ namespace Jumpcutter_dot_net
 
             var chunks = new List<Chunk>();
 
-            var bufferSize = reAlignBuffer(samplesPerFrame, audioFileReader.WaveFormat.BlockAlign);
+            var bufferSize = reAlignBuffer(options.samplesPerFrame, audioFileReader.WaveFormat.BlockAlign);
 
             float[] sampleBuffer = new float[bufferSize];
             int samplesRead;
@@ -206,7 +205,7 @@ namespace Jumpcutter_dot_net
             foreach (var chunk in chunks)
             {
                 var chunkLength = chunk.endFrame - chunk.startFrame;
-                var playbackRate = chunk.GetSpeed(options);
+                var playbackRate = chunk.GetSpeed(ref options);
                 var duration = chunkLength / playbackRate;
                 totalDuration += duration;
             }
@@ -218,7 +217,7 @@ namespace Jumpcutter_dot_net
         private int VocodeAudioChunk(Chunk chunk, AudioFileReader audioFileReader, WaveFileWriter audioFileWriter)
         {
             ///TODO Create the soundtouch outside this loop, and just reset it!!!!!!
-            var speed = (chunk.GetSpeed(options) - 1) * 100;
+            var speed = (chunk.GetSpeed(ref options) - 1) * 100;
             var samplesLeft = false;
             soundTouch = new SoundTouch.SoundTouch<float, double>();
 
@@ -235,7 +234,7 @@ namespace Jumpcutter_dot_net
             soundTouch.SetTempoChange(speed);
 
             //Sample count of chunk
-            var chunkSamplesLength = ((chunk.endFrame * samplesPerFrame) - (chunk.startFrame * samplesPerFrame));
+            var chunkSamplesLength = ((chunk.endFrame * options.samplesPerFrame) - (chunk.startFrame * options.samplesPerFrame));
 
 
             int totalSamplesRead = 0;
@@ -258,13 +257,12 @@ namespace Jumpcutter_dot_net
             {
                 if (!readAll)
                 {
-                    utils.ReportStatus(WRITE_AUDIO_MESSAGE, chunk.startFrame + (totalSamplesRead / samplesPerFrame), options.frame_count, 2);
+                    utils.ReportStatus(WRITE_AUDIO_MESSAGE, chunk.startFrame + (totalSamplesRead / options.samplesPerFrame), options.frame_count, 2);
 
                     //Shorten buffer if needed
                     if (bufferSize > chunkSamplesLength - totalSamplesRead)
                     {
                         bufferSize = reAlignBuffer(chunkSamplesLength - totalSamplesRead,audioFileReader.WaveFormat.BlockAlign);
-
                     }
 
                     //Read next block of samples
@@ -312,6 +310,7 @@ namespace Jumpcutter_dot_net
             return totalSamplesRead;
         }
 
+        /// TODO is this working, causes pops?
         private int reAlignBuffer(int bufferSize,int blocksize)
         {
             var rem = bufferSize % blocksize;

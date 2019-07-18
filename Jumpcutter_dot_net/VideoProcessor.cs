@@ -6,7 +6,7 @@ using Xabe.FFmpeg;
 
 namespace Jumpcutter_dot_net
 {
-    internal class VideoProcessor
+    public class VideoProcessor
     {
         private readonly Options options;
         private readonly Utils utils;
@@ -16,7 +16,7 @@ namespace Jumpcutter_dot_net
         private readonly string tempVideo;
 
 
-        public VideoProcessor(Options options)
+        public VideoProcessor(ref Options options)
         {
             this.options = options;
             this.utils = new Utils();
@@ -52,7 +52,7 @@ namespace Jumpcutter_dot_net
             //options.video_codec = codec;
 
 
-            Console.WriteLine("\t"+options.frame_rate + " fps | " + options.orignial_length + " seconds | " + options.frame_count + " frames | " + options.frame_size.Height + "p");
+            Console.WriteLine("\t" + options.frame_rate + " fps | " + options.orignial_length + " seconds | " + options.frame_count + " frames | " + options.frame_size.Height + "p");
 
         }
 
@@ -89,6 +89,26 @@ namespace Jumpcutter_dot_net
                     Directory.SetCurrentDirectory(lastDir);
                 }
             }
+        }
+
+        public Mat getNextFrame()
+        {
+            // var frame = inputVideo.QueryFrame();
+
+
+            var nextFrame = inputVideo.Grab();
+         
+
+                if (!nextFrame) return null;
+
+
+                var img = new Mat();
+                inputVideo.Retrieve(img);
+
+
+                return img;
+          
+
         }
 
         internal void WriteFinalVideo(List<int> framesToRender, string audioFile)
@@ -132,7 +152,7 @@ namespace Jumpcutter_dot_net
                     lastFrame = adjframe;
 
                 }
-                utils.ReportStatus("Writing frame {0} out of {1} {2}", options.frame_count, options.frame_count, 2,last: true);
+                utils.ReportStatus("Writing frame {0} out of {1} {2}", options.frame_count, options.frame_count, 2, last: true);
             }
         }
 

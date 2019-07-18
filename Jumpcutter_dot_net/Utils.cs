@@ -58,7 +58,7 @@ namespace Jumpcutter_dot_net
         public int endFrame;
         public bool hasLoudAudio;
 
-        internal double GetSpeed(Options options) => (hasLoudAudio ? options.sounded_speed : options.silent_speed);
+        internal double GetSpeed(ref Options options) => (hasLoudAudio ? options.sounded_speed : options.silent_speed);
 
         public Chunk(int startFrame, int endFrame, bool hasLoudAudio)
         {
