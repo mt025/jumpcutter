@@ -1,7 +1,10 @@
-# Project
+## Archive Update
 Partially working however having issues with 60fps videos and also using sub-optimal libaries.
 
+
+# Project Info
 This is being re-written to work with .net, at same same time updating features
+
 
 # jumpcutter
 This project is a .NET fork of carykh/jumpcutter
