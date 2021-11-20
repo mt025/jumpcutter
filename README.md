@@ -1,13 +1,12 @@
+# Project
+Partially working however having issues with 60fps videos and also using sub-optimal libaries.
 
-
+This is being re-written to work with .net, at same same time updating features
 
 # jumpcutter
 This project is a .NET fork of carykh/jumpcutter
 
 Automatically edits videos. Explanation here: https://www.youtube.com/watch?v=DQ8orIurGxw
-
-## Project Info:
-This is being re-written to work with .net, at same same time updating features
 
 ## Main Goals:
 * Show a detailed progress and percent for file processing 
